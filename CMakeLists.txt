@@ -3,7 +3,7 @@ project(tagbench)
 cmake_minimum_required(VERSION 3.5.0)
 
 # Compile options etc.
-set(CPP_STANDARD cxx_std_14)
+set(CPP_STANDARD cxx_std_17)
 
 # Dependencies
 find_package(OpenCV REQUIRED)
@@ -32,7 +32,7 @@ target_compile_features(input_data_preprocessor PUBLIC ${CPP_STANDARD})
 
 # Preprocessed data
 add_custom_target(preprocessed_data
-    COMMAND $<TARGET_FILE:input_data_preprocessor> ${CMAKE_SOURCE_DIR}/dist/tagbench_input.jsonl
+    COMMAND $<TARGET_FILE:input_data_preprocessor> data/arcore-31-single-tag ${CMAKE_SOURCE_DIR}/dist/tagbench_input.jsonl
     BYPRODUCTS ${CMAKE_SOURCE_DIR}/dist/tagbench_input.jsonl
 )
 add_dependencies(preprocessed_data input_data_preprocessor)

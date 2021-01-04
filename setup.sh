@@ -25,6 +25,9 @@ cd build && cmake --build .; cd ..; \
 #
 #       ../../refs/apriltags-cpp-win/build/Release/tagtest.exe -f Tag16h5 my/data/out*
 #
+#   Build and run input data preprocessor to prepare data for tagbench
+#
+#       cd build && cmake --build . --target input_data_preprocessor; cd ..; build/Debug/input_data_preprocessor.exe data/arcore-31-single-tag/ > tagbench_input.jsonl
 #
 #   Count frames in .avi
 #
