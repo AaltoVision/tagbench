@@ -71,13 +71,13 @@ std::vector<tag_corners> detect_marker_corners(cv::Mat& image)
 }
 
 // Prepare input data from given directory into .jsonl that 'tagbench' program expects
-// Output (stdout) in jsonl format:
+// Output in jsonl format:
 //
 //      {
-//          "frame_index": 1,
-//          "frame_filename": "frame0001.png",
-//          "cameraParameters": {intrinsicstuff, pos, rotation},
-// (or cameraExtrinsics, cameraIntrinsics)
+//          "frameIndex": 1,
+//          "framePath": "frame0001.png",
+//          "cameraIntrinsics": {focal lengths, principal point...},
+//          "cameraExtrinsics": {pos, rotation...},
 //          "markers": [{"id":0,"corners":[[p0x,p0y],[p1x,p1y]...]}, {"id":1...}]
 //      }
 //
@@ -164,7 +164,6 @@ int main(int argc, char* argv[])
 
         auto& p = camera_parameters[frame_index];
 
-        // fprintf(out, "frame = %d, p = %s\n", frame_index, p.dump().c_str());
         if (p.contains("cameraIntrinsics") && p.contains("cameraExtrinsics"))
         {
             auto j = json{};
@@ -173,6 +172,7 @@ int main(int argc, char* argv[])
 
             j["frameIndex"] = frame_index;
             j["framePath"] = frame_path.string();
+            // TODO: j["frameTime"] perhaps
 
             auto frame = cv::imread(frame_path.string());
             j["markers"] = detect_marker_corners(frame);

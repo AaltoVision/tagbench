@@ -27,7 +27,8 @@ cd build && cmake --build .; cd ..; \
 #
 #   Build and run input data preprocessor to prepare data for tagbench
 #
-#       cd build && cmake --build . --target input_data_preprocessor; cd ..; build/Debug/input_data_preprocessor.exe data/arcore-31-single-tag/ > tagbench_input.jsonl
+#       cmake --build build --target input_data_preprocessor && build/Debug/input_data_preprocessor.exe data/arcore-31-single-tag/ > tagbench_input.jsonl
+#       cmake --build build --target input_data_preprocessor --config Release && build/Release/input_data_preprocessor.exe data/arcore-31-single-tag/ > dist/tagbench_input.jsonl
 #
 #   Count frames in .avi
 #
