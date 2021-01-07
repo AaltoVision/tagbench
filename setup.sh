@@ -19,7 +19,7 @@ cd build && cmake --build .; cd ..; \
 #
 #   Generate some frames from .avi
 #
-#       ffmpeg -i data.avi frames/frame%04d.png -hide_banner
+#       ffmpeg -i data.avi -start_number 0 frames/%d.png -hide_banner
 #
 #   Run apriltags tagtest on frames
 #

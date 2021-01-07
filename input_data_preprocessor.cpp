@@ -24,10 +24,10 @@ static auto timing = [](auto& f) {
     return dt;
 };
 
-// hacky, todo some better way to contain the frame<->index info
+// hacky, TODO some better way to contain the frame<->index info
 int parse_frame_number_from_path(std::filesystem::path const& path)
 {
-    return std::atoi(path.filename().stem().string().c_str());
+    return std::stoi(path.filename().stem().string().c_str());
 }
 
 using tag_corners = std::array<std::array<float, 2>, 4>;
@@ -107,11 +107,18 @@ int main(int argc, char* argv[])
     // Read in frame paths with their indices
     auto frame_paths = std::map<int, std::filesystem::path>{};
     auto frame_directory = std::filesystem::directory_iterator(input_frames_dir);
-    std::transform(frame_directory, std::filesystem::directory_iterator{}, std::inserter(frame_paths, frame_paths.end()),
-        [](auto const& path)
-        {
-            return std::make_pair(parse_frame_number_from_path(path), path);
-        });
+    try {
+        std::transform(frame_directory, std::filesystem::directory_iterator{}, std::inserter(frame_paths, frame_paths.end()),
+            [](auto const& path)
+            {
+                return std::make_pair(parse_frame_number_from_path(path), path);
+            });
+    } catch (std::exception& e)
+    {
+        std::printf("Failed to parse frame numbers\n");
+        std::printf("%s\n", e.what());
+        return 3;
+    }
 
     // Parse time->frame_index mapping
     auto time_to_frame_index = std::unordered_map<float, int>{};
@@ -174,8 +181,8 @@ int main(int argc, char* argv[])
             j["framePath"] = frame_path.string();
             // TODO: j["frameTime"] perhaps
 
-            auto frame = cv::imread(frame_path.string());
-            j["markers"] = detect_marker_corners(frame);
+            // auto frame = cv::imread(frame_path.string());
+            // j["markers"] = detect_marker_corners(frame);
 
             fprintf(out, "%s\n", j.dump().c_str());
         }
