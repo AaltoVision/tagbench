@@ -194,12 +194,19 @@ int main(int argc, char* argv[])
 
     // Initial M
 
+    // Tag on the screen is 19.8cm (in arcore-7-1-single-2 data, where tag is shown on screen)
     auto const s = 0.198f;
     std::vector<cv::Point3f> Z = {
-        { -s/2, -s/2, 0 },
-        { s/2, -s/2, 0 },
-        { -s/2, s/2, 0 },
-        { s/2, s/2, 0 },
+        { -s/2, -s/2, 0 }, // bottom-left
+        { s/2, -s/2, 0 }, // bottom-right
+        { s/2, s/2, 0 }, // top-right
+        { -s/2, s/2, 0 }, // top-left
+    };
+    std::vector<cv::Vec4f> Z4 = {
+        { -s/2, -s/2, 0, 1, }, // bottom-left
+        { s/2, -s/2, 0, 1, }, // bottom-right
+        { s/2, s/2, 0, 1, }, // top-right
+        { -s/2, s/2, 0, 1, }, // top-left
     };
 
     auto Ys = std::vector<std::vector<cv::Point2f>>{};
@@ -269,15 +276,6 @@ int main(int argc, char* argv[])
             cv::Point2f{frame.detections[0].p[2].x, frame.detections[0].p[2].y},
             cv::Point2f{frame.detections[0].p[3].x, frame.detections[0].p[3].y},
         });
-
-        // Tag on the screen is 19.8cm (in arcore-7-1-single-2 data, where tag is shown on screen)
-        auto const s = 0.198f;
-        std::vector<cv::Vec4f> Z4 = {
-            { -s/2, -s/2, 0, 1 },
-            { s/2, -s/2, 0, 1 },
-            { -s/2, s/2, 0, 1 },
-            { s/2, s/2, 0, 1 },
-        };
 
         auto const& K = Ks[i];
         cv::Matx44f K44 = {
