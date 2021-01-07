@@ -194,7 +194,7 @@ int main(int argc, char* argv[])
 
     // Initial M
 
-    auto const s = 0.241f;
+    auto const s = 0.198f;
     std::vector<cv::Point3f> Z = {
         { -s/2, -s/2, 0 },
         { s/2, -s/2, 0 },
@@ -211,6 +211,7 @@ int main(int argc, char* argv[])
     {
         auto const& d = f.detections[0].p;
 
+        // TODO: check order of corners vs. Z
         Ys.push_back({
             cv::Point2f{ d[0].x, d[0].y },
             cv::Point2f{ d[1].x, d[1].y },
@@ -218,35 +219,27 @@ int main(int argc, char* argv[])
             cv::Point2f{ d[3].x, d[3].y },
         });
 
-        {
-            // TODO: opencv is row-major
-            auto &c0 = f.intrinsic_matrix.col(0);
-            auto &c1 = f.intrinsic_matrix.col(1);
-            auto &c2 = f.intrinsic_matrix.col(2);
-            Ks.push_back({
-                c0.x(), c0.y(), c0.z(),
-                c1.x(), c1.y(), c1.z(),
-                c2.x(), c2.y(), c2.z(),
-            });
-        }
+        Ks.push_back({
+            f.intrinsic_matrix(0, 0), f.intrinsic_matrix(0, 1), f.intrinsic_matrix(0, 2),
+            f.intrinsic_matrix(1, 0), f.intrinsic_matrix(1, 1), f.intrinsic_matrix(1, 2),
+            f.intrinsic_matrix(2, 0), f.intrinsic_matrix(2, 1), f.intrinsic_matrix(2, 2),
+        });
 
-        {
-            // TODO: opencv is row-major
-            auto& c0 = f.view_matrix.col(0);
-            auto& c1 = f.view_matrix.col(1);
-            auto& c2 = f.view_matrix.col(2);
-            auto& c3 = f.view_matrix.col(3);
-            Vs.push_back({
-                c0.x(), c0.y(), c0.z(), c0.w(),
-                c1.x(), c1.y(), c1.z(), c1.w(),
-                c2.x(), c2.y(), c2.z(), c2.w(),
-                c3.x(), c3.y(), c3.z(), c3.w(),
-            });
-        }
+        Vs.push_back({
+            f.view_matrix(0, 0), f.view_matrix(0, 1), f.view_matrix(0, 2), f.view_matrix(0, 3),
+            f.view_matrix(1, 0), f.view_matrix(1, 1), f.view_matrix(1, 2), f.view_matrix(0, 3),
+            f.view_matrix(2, 0), f.view_matrix(2, 1), f.view_matrix(2, 2), f.view_matrix(0, 3),
+            f.view_matrix(3, 0), f.view_matrix(3, 1), f.view_matrix(3, 2), f.view_matrix(3, 3),
+        });
 
         cv::Vec3f r;
         auto& T = Ts.emplace_back();
         cv::solvePnP(Z, Ys.back(), Ks.back(), cv::Vec4f{ 0, 0, 0, 0 }, r, T);
+
+        std::cout << "Z:\n" << Z << "\n";
+        std::cout << "Y:\n" << Ys.back() << "\n";
+        std::cout << "K:\n" << Ks.back() << "\n";
+        std::cout << "V:\n" << Vs.back() << "\n";
 
         auto& R = Rs.emplace_back();
         cv::Rodrigues(r, R);
@@ -260,11 +253,6 @@ int main(int argc, char* argv[])
     //     PVMz[1] /= PVMz[3];
     //     return ((PVMz - y).t()*(PVMz - y))[0];
     // };
-
-    // cv::Vec4f z00 = { -s/2, -s/2, 0, 1 };
-    // cv::Vec4f y0 = { f.detections[0].p[0].x, f.detections[0].p[0].y, 0, 1 };
-    // auto E2 = error_cv(K44, V, M_test, z00, y0);
-    // printf("E2: %.2f\n", E2);
 
     auto images = std::vector<cv::Mat>{};
     auto detected_points = std::vector<std::array<cv::Point2f, 4>>{};
@@ -282,7 +270,8 @@ int main(int argc, char* argv[])
             cv::Point2f{frame.detections[0].p[3].x, frame.detections[0].p[3].y},
         });
 
-        auto const s = 0.241f; // tag on the screen is 24.1cm (in arcore-31-single-tag data, where tag is shown on screen)
+        // Tag on the screen is 19.8cm (in arcore-7-1-single-2 data, where tag is shown on screen)
+        auto const s = 0.198f;
         std::vector<cv::Vec4f> Z4 = {
             { -s/2, -s/2, 0, 1 },
             { s/2, -s/2, 0, 1 },
