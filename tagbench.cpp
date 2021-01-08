@@ -99,7 +99,6 @@ void visualize_projections(cv::InputArrayOfArrays images,
                            std::vector<std::array<cv::Point2f, 4>> const& detections,
                            std::vector<std::array<cv::Point2f, 4>> const& projections,
                            std::vector<cv::Vec3f> const& Ts,
-                        //    std::vector<cv::Vec3f> const& VIO_Ts
                            std::vector<cv::Matx33f> const& Rs
                            )
 {
@@ -117,12 +116,11 @@ void visualize_projections(cv::InputArrayOfArrays images,
         label << "T: " << 10000* Ts[i] << "\n";
         // label << "R: " << Rs[i] << "\n";
 
-cv::Ptr<cv::Formatter> formatMat = cv::Formatter::get(cv::Formatter::FMT_DEFAULT);
-formatMat->set64fPrecision(3);
-formatMat->set32fPrecision(3);
-label << "R:\n" << formatMat->format( cv::Mat(Rs[i]) ) << std::endl;
+        cv::Ptr<cv::Formatter> formatMat = cv::Formatter::get(cv::Formatter::FMT_DEFAULT);
+        formatMat->set64fPrecision(3);
+        formatMat->set32fPrecision(3);
+        label << "R:\n" << formatMat->format( cv::Mat(Rs[i]) ) << std::endl;
 
-        // label << "VIO_T: " << 10000* VIO_Ts[i];
         put_text_lines(image_with_projections, label);
         return image_with_projections;
     };
@@ -177,23 +175,6 @@ int main(int argc, char* argv[])
         }
     }
 
-    auto error = [&](Eigen::Matrix4f const &P, Eigen::Matrix4f const &V, Eigen::Matrix4f const &M,
-                     Eigen::Vector4f const &z, Eigen::Vector4f const &y) {
-        Eigen::Vector4f PVMz = P*V*M*z;
-        PVMz[0] /= PVMz[3];
-        PVMz[1] /= PVMz[3];
-        return ((PVMz - y).transpose()*(PVMz - y))[0];
-    };
-
-    Eigen::Matrix4f M = Eigen::Matrix4f::Identity();
-    auto z0 = Eigen::Vector4f(0, 0, 0, 1); // top-left?
-    auto py = frames[0].detections[0].p[0]; // adjust range from [-.5, .5] to [0, 1]?
-    auto E = error(frames[0].intrinsic_matrix, frames[0].view_matrix, M,
-                    z0, Eigen::Vector4f(py.x, py.y, 0, 1));
-    std::printf("E(M): %.2f\n", E);
-
-    // Initial M
-
     // Tag on the screen is 19.8cm (in arcore-7-1-single-2 data, where tag is shown on screen)
     auto const s = 0.198f;
     std::vector<cv::Point3f> Z = {
@@ -218,12 +199,11 @@ int main(int argc, char* argv[])
     {
         auto const& d = f.detections[0].p;
 
-        // TODO: check order of corners vs. Z
         Ys.push_back({
-            cv::Point2f{ d[0].x, d[0].y },
-            cv::Point2f{ d[1].x, d[1].y },
-            cv::Point2f{ d[2].x, d[2].y },
-            cv::Point2f{ d[3].x, d[3].y },
+            cv::Point2f{ d[0].x, d[0].y }, // bottom-left
+            cv::Point2f{ d[1].x, d[1].y }, // bottom-right
+            cv::Point2f{ d[2].x, d[2].y }, // top-right
+            cv::Point2f{ d[3].x, d[3].y }, // top-left
         });
 
         Ks.push_back({
@@ -243,27 +223,20 @@ int main(int argc, char* argv[])
         auto& T = Ts.emplace_back();
         cv::solvePnP(Z, Ys.back(), Ks.back(), cv::Vec4f{ 0, 0, 0, 0 }, r, T);
 
-        std::cout << "Z:\n" << Z << "\n";
-        std::cout << "Y:\n" << Ys.back() << "\n";
-        std::cout << "K:\n" << Ks.back() << "\n";
-        std::cout << "V:\n" << Vs.back() << "\n";
+        // std::cout << "Z:\n" << Z << "\n";
+        // std::cout << "Y:\n" << Ys.back() << "\n";
+        // std::cout << "K:\n" << Ks.back() << "\n";
+        // std::cout << "V:\n" << Vs.back() << "\n";
 
         auto& R = Rs.emplace_back();
         cv::Rodrigues(r, R);
     }
 
-    // auto error_cv = [&](cv::Matx44f const &P, cv::Matx44f const &V, cv::Matx44f const &M,
-    //                  cv::Vec4f const &z, cv::Vec4f const &y) {
-    //     cv::Vec4f PVMz = P*V*M*z;
-    //     std::cout << "PVMz:\n" << PVMz << "\n";
-    //     PVMz[0] /= PVMz[3];
-    //     PVMz[1] /= PVMz[3];
-    //     return ((PVMz - y).t()*(PVMz - y))[0];
-    // };
-
     auto images = std::vector<cv::Mat>{};
     auto detected_points = std::vector<std::array<cv::Point2f, 4>>{};
     auto projected_points = std::vector<std::array<cv::Point2f, 4>>{};
+    auto Cs = std::vector<cv::Matx44f>{};
+    auto K44s = std::vector<cv::Matx44f>{};
     for (auto i = 0u; i < frames.size(); ++i)
     {
         auto const& frame = frames[i];
@@ -278,20 +251,20 @@ int main(int argc, char* argv[])
         });
 
         auto const& K = Ks[i];
-        cv::Matx44f K44 = {
+        K44s.push_back({
             K(0, 0), K(0, 1), K(0, 2), 0,
             K(1, 0), K(1, 1), K(1, 2), 0,
             K(2, 0), K(2, 1), K(2, 2), 0,
             0, 0, 0, 1,
-        };
+        });
         auto const& R = Rs[i];
         auto const& T = Ts[i];
-        cv::Matx44f M_test = {
+        Cs.push_back({
             R(0, 0), R(0, 1), R(0, 2), T(0),
             R(1, 0), R(1, 1), R(1, 2), T(1),
             R(2, 0), R(2, 1), R(2, 2), T(2),
             0, 0, 0, 1,
-        };
+        });
 
         auto& proj = projected_points.emplace_back();
         for (auto iz = 0; iz < 4; ++iz)
@@ -302,18 +275,82 @@ int main(int argc, char* argv[])
             //                           M                  K
             // (tag object space coords) -> (camera coords) -> (screen coords)
 
-            cv::Vec4f proj_h = K44 * M_test * Z4[iz];
-            // proj_h[0] /= proj_h[2];
-            // proj_h[1] /= proj_h[2];
+            // TODO: VIO coords usage (V.inv basically)
+
+            auto const& K = K44s.back();
+            auto const& M = Cs.back();
+            cv::Vec4f proj_h = K * M * Z4[iz];
+            proj_h[0] /= proj_h[2];
+            proj_h[1] /= proj_h[2];
+            proj[iz] = { proj_h[0], proj_h[1] };
             // TODO: remove the Z element? (so Z is x,y,1, and Rt is r1 r2 (ar3+t) or something)
 
-            proj[iz] = { proj_h[0], proj_h[1] };
         }
     }
-    // visualize_projections(M_test, { K44 }, { V }, images, detected_points);
-    // visualize_projections(images, detected_points, projected_points);
     visualize_projections(images, detected_points, projected_points, Ts, Rs);
 
+    auto projection_error = [](cv::Matx44f const &K, cv::Matx44f const &V, cv::Matx44f const &M,
+                     cv::Vec4f const &z, cv::Vec2f const &y) {
+        cv::Vec4f PVMz = K*V*M*z;
+        PVMz[0] /= PVMz[2];
+        PVMz[1] /= PVMz[2];
+        auto PVMz_xy = cv::Vec2f{ PVMz[0], PVMz[1] };
+        auto d = PVMz_xy - y;
+        return d.dot(d);
+    };
+
+    {
+        auto mse = 0.0f;
+        for (auto j = 0u; j < frames.size(); ++j)
+        {
+            auto frame_mse = 0.0f;
+            assert(std::abs(cv::determinant(Vs[j])) > 0.01);
+            for (auto k = 0u; k < 4; ++k)
+            {
+                auto y = cv::Vec2f{ Ys[j][k].x, Ys[j][k].y };
+                frame_mse += projection_error(K44s[j], Vs[j], Vs[j].inv() * Cs[j], Z4[k], y);
+            }
+            std::printf("e_%u = %.2f\n", j, frame_mse);
+            mse += frame_mse;
+        }
+        std::printf("E(M_jk) = %.2f (Reference error; projecting with per-frame April tag pose)\n", mse);
+    }
+
+    {
+        auto mse = 0.0f;
+        cv::Matx44f M0 = Vs[0].inv() * Cs[0]; // initialize with frame 0 (arbitrary)
+        for (auto j = 0u; j < frames.size(); ++j)
+        {
+            auto frame_mse = 0.0f;
+            for (auto k = 0u; k < 4; ++k)
+            {
+                auto y = cv::Vec2f{ Ys[j][k].x, Ys[j][k].y };
+                frame_mse += projection_error(K44s[j], Vs[j], M0, Z4[k], y);
+            }
+            std::printf("e_%u = %.2f\n", j, frame_mse);
+            mse += frame_mse;
+        }
+        std::printf("E(M_0) = %.2f (Error for M0 initialized from first frame, no optimization)\n", mse);
+    }
+
     // TODO: Gauss-Newton optimization for M
+    cv::Matx44f M = cv::Matx44f::eye();
+
+    // Final score
+    {
+        auto mse = 0.0f;
+        for (auto j = 0u; j < frames.size(); ++j)
+        {
+            auto frame_mse = 0.0f;
+            for (auto k = 0u; k < 4; ++k)
+            {
+                auto y = cv::Vec2f{ Ys[j][k].x, Ys[j][k].y };
+                frame_mse += projection_error(K44s[j], Vs[j], M, Z4[k], y);
+            }
+            std::printf("e_%u = %.2f\n", j, frame_mse);
+            mse += frame_mse;
+        }
+        std::printf("E(M) = %.2f (Error for optimized M)\n", mse);
+    }
 
 }
