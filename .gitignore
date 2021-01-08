@@ -1,4 +1,9 @@
 build/
 .vscode/
-data/
 dist/
+data/*
+recorded_data/*
+
+# Test data to keep in the repo
+!data/arcore-mini-test.jsonl
+!recorded_data/arcore-mini-test/
