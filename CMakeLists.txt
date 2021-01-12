@@ -2,7 +2,7 @@ project(tagbench)
 cmake_minimum_required(VERSION 3.5.0)
 
 # Compile options etc.
-set(CPP_STANDARD cxx_std_17)
+set(CPP_STANDARD cxx_std_14)
 
 # Dependencies
 find_package(OpenCV REQUIRED)

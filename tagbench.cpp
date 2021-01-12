@@ -221,7 +221,8 @@ int main(int argc, char* argv[])
         });
 
         cv::Vec3f r;
-        auto& T = Ts.emplace_back();
+        Ts.push_back(cv::Vec3f{});
+        auto& T = Ts.back();
         cv::solvePnP(Z, Ys.back(), Ks.back(), cv::Vec4f{ 0, 0, 0, 0 }, r, T);
 
         // std::cout << "Z:\n" << Z << "\n";
@@ -229,7 +230,8 @@ int main(int argc, char* argv[])
         // std::cout << "K:\n" << Ks.back() << "\n";
         // std::cout << "V:\n" << Vs.back() << "\n";
 
-        auto& R = Rs.emplace_back();
+        Rs.push_back({});
+        auto& R = Rs.back();
         cv::Rodrigues(r, R);
     }
 
@@ -242,7 +244,8 @@ int main(int argc, char* argv[])
     {
         auto const& frame = frames[i];
         auto temp_image = cv::imread(frame.frame_path);
-        auto& image = images.emplace_back();
+        images.push_back({});
+        auto& image = images.back();
         cv::resize(temp_image, image, temp_image.size() / 2);
         detected_points.push_back({
             cv::Point2f{frame.detections[0].p[0].x, frame.detections[0].p[0].y},
@@ -272,7 +275,8 @@ int main(int argc, char* argv[])
     auto tag_projected_points = std::vector<std::array<cv::Point2f, 4>>{};
     for (auto i = 0u; i < frames.size(); ++i)
     {
-        auto& proj = tag_projected_points.emplace_back();
+        tag_projected_points.push_back({});
+        auto& proj = tag_projected_points.back();
         for (auto iz = 0; iz < 4; ++iz)
         {
             auto const& K = K44s[i];
@@ -290,7 +294,8 @@ int main(int argc, char* argv[])
     auto M0 = Vs[0].inv() * Cs[0];
     for (auto i = 0u; i < frames.size(); ++i)
     {
-        auto& proj = M0_projected_points.emplace_back();
+        M0_projected_points.push_back({});
+        auto& proj = M0_projected_points.back();
         for (auto iz = 0; iz < 4; ++iz)
         {
             auto const& K = K44s[i];
@@ -313,7 +318,8 @@ int main(int argc, char* argv[])
     M /= (float)frames.size();
     for (auto i = 0u; i < frames.size(); ++i)
     {
-        auto& proj = M_projected_points.emplace_back();
+        M_projected_points.push_back({});
+        auto& proj = M_projected_points.back();
         for (auto iz = 0; iz < 4; ++iz)
         {
             auto const& K = K44s[i];
