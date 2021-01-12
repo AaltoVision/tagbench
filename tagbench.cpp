@@ -40,7 +40,6 @@ static auto timing = [](auto& f) {
 };
 
 void parse_camera_intrinsics(json const &camera_intrinsics,
-                            //  Eigen::Matrix4f& projection_matrix,
                              Eigen::Matrix4f& intrinsic_matrix)
 {
     auto const focal_length_x = camera_intrinsics["focalLengthX"].get<float>();
@@ -157,6 +156,8 @@ int main(int argc, char* argv[])
         auto f = frame_info{};
 
         parse_camera_intrinsics(j["cameraIntrinsics"], /*f.projection_matrix,*/ f.intrinsic_matrix);
+        f.intrinsic_matrix(0, 2) /= 2;
+        f.intrinsic_matrix(1, 2) /= 2;
         parse_camera_extrinsics(j["cameraExtrinsics"], f.view_matrix);
         f.frame_path = j["framePath"];
 
@@ -232,9 +233,9 @@ int main(int argc, char* argv[])
         cv::Rodrigues(r, R);
     }
 
+    // Prepare some of the data into easier form...
     auto images = std::vector<cv::Mat>{};
     auto detected_points = std::vector<std::array<cv::Point2f, 4>>{};
-    auto projected_points = std::vector<std::array<cv::Point2f, 4>>{};
     auto Cs = std::vector<cv::Matx44f>{};
     auto K44s = std::vector<cv::Matx44f>{};
     for (auto i = 0u; i < frames.size(); ++i)
@@ -265,30 +266,66 @@ int main(int argc, char* argv[])
             R(2, 0), R(2, 1), R(2, 2), T(2),
             0, 0, 0, 1,
         });
+    }
 
-        auto& proj = projected_points.emplace_back();
+    // Show projected points when just using different (optimal) M for each image (just a sanity check for apriltag pose, it should match well)
+    auto tag_projected_points = std::vector<std::array<cv::Point2f, 4>>{};
+    for (auto i = 0u; i < frames.size(); ++i)
+    {
+        auto& proj = tag_projected_points.emplace_back();
         for (auto iz = 0; iz < 4; ++iz)
         {
-            // M is (tag object space coords) -> (camera coords)
-            // M.inv is (camera coords) -> (tag object space coords)
-
-            //                           M                  K
-            // (tag object space coords) -> (camera coords) -> (screen coords)
-
-            // TODO: VIO coords usage (V.inv basically)
-
-            auto const& K = K44s.back();
-            auto const& M = Cs.back();
-            cv::Vec4f proj_h = K * M * Z4[iz];
+            auto const& K = K44s[i];
+            auto const& C = Cs[i];
+            cv::Vec4f proj_h = K * C * Z4[iz]; // == K * Vs[i] * Vs[i].inv() * C * Z4[iz]
             proj_h[0] /= proj_h[2];
             proj_h[1] /= proj_h[2];
             proj[iz] = { proj_h[0], proj_h[1] };
-            // TODO: remove the Z element? (so Z is x,y,1, and Rt is r1 r2 (ar3+t) or something)
-
         }
     }
-    visualize_projections(images, detected_points, projected_points, Ts, Rs);
+    // visualize_projections(images, detected_points, tag_projected_points, Ts, Rs);
 
+    // Show projected points when just using initial M (M0) for each image
+    auto M0_projected_points = std::vector<std::array<cv::Point2f, 4>>{};
+    auto M0 = Vs[0].inv() * Cs[0];
+    for (auto i = 0u; i < frames.size(); ++i)
+    {
+        auto& proj = M0_projected_points.emplace_back();
+        for (auto iz = 0; iz < 4; ++iz)
+        {
+            auto const& K = K44s[i];
+            cv::Vec4f proj_h = K * Vs[i] * M0 * Z4[iz];
+            proj_h[0] /= proj_h[2];
+            proj_h[1] /= proj_h[2];
+            proj[iz] = { proj_h[0], proj_h[1] };
+        }
+    }
+    // visualize_projections(images, detected_points, M0_projected_points, Ts, Rs);
+
+    // Show projected points when using optimized M for each image
+    // TODO
+    auto M_projected_points = std::vector<std::array<cv::Point2f, 4>>{};
+    auto M = cv::Matx44f::zeros();
+    for (auto i = 0u; i < frames.size(); ++i)
+    {
+        M += Vs[i].inv() * Cs[i];
+    }
+    M /= (float)frames.size();
+    for (auto i = 0u; i < frames.size(); ++i)
+    {
+        auto& proj = M_projected_points.emplace_back();
+        for (auto iz = 0; iz < 4; ++iz)
+        {
+            auto const& K = K44s[i];
+            cv::Vec4f proj_h = K * Vs[i] * M * Z4[iz];
+            proj_h[0] /= proj_h[2];
+            proj_h[1] /= proj_h[2];
+            proj[iz] = { proj_h[0], proj_h[1] };
+        }
+    }
+    visualize_projections(images, detected_points, M_projected_points, Ts, Rs);
+
+    // TODO: could just pass in Z and Y arrays and compute all 4 corner projection errors at once
     auto projection_error = [](cv::Matx44f const &K, cv::Matx44f const &V, cv::Matx44f const &M,
                      cv::Vec4f const &z, cv::Vec2f const &y) {
         cv::Vec4f PVMz = K*V*M*z;
@@ -299,12 +336,16 @@ int main(int argc, char* argv[])
         return d.dot(d);
     };
 
+    auto full_mse = [](cv::Matx44f const &K, std::vector<cv::Matx44f> const &V, cv::Matx44f const &M,
+                       cv::Vec4f const &z, std::vector<cv::Vec2f> const &y) {
+                           
+    };
+
     {
         auto mse = 0.0f;
         for (auto j = 0u; j < frames.size(); ++j)
         {
             auto frame_mse = 0.0f;
-            assert(std::abs(cv::determinant(Vs[j])) > 0.01);
             for (auto k = 0u; k < 4; ++k)
             {
                 auto y = cv::Vec2f{ Ys[j][k].x, Ys[j][k].y };
@@ -313,6 +354,7 @@ int main(int argc, char* argv[])
             std::printf("e_%u = %.2f\n", j, frame_mse);
             mse += frame_mse;
         }
+        mse /= (frames.size() * 4);
         std::printf("E(M_jk) = %.2f (Reference error; projecting with per-frame April tag pose)\n", mse);
     }
 
@@ -330,11 +372,12 @@ int main(int argc, char* argv[])
             std::printf("e_%u = %.2f\n", j, frame_mse);
             mse += frame_mse;
         }
+        mse /= (frames.size() * 4);
         std::printf("E(M_0) = %.2f (Error for M0 initialized from first frame, no optimization)\n", mse);
     }
 
     // TODO: Gauss-Newton optimization for M
-    cv::Matx44f M = cv::Matx44f::eye();
+    // cv::Matx44f M = cv::Matx44f::eye();
 
     // Final score
     {
@@ -350,6 +393,7 @@ int main(int argc, char* argv[])
             std::printf("e_%u = %.2f\n", j, frame_mse);
             mse += frame_mse;
         }
+        mse /= (frames.size() * 4);
         std::printf("E(M) = %.2f (Error for optimized M)\n", mse);
     }
 
