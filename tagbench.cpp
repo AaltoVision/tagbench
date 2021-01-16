@@ -127,10 +127,8 @@ void visualize_projections(cv::InputArrayOfArrays images,
 }
 
 
-// Eigen::Matrix3d quat2rmat(const Eigen::Vector4d& q) {
-//     Eigen::Matrix3d R;
-Eigen::Matrix3f quat2rmat(const Eigen::Vector4f& q) {
-    Eigen::Matrix3f R;
+Eigen::Matrix3d quat2rmat(const Eigen::Vector4d& q) {
+    Eigen::Matrix3d R;
     R <<
         q[0]*q[0]+q[1]*q[1]-q[2]*q[2]-q[3]*q[3], 2*q[1]*q[2] - 2*q[0]*q[3], 2*q[1]*q[3] + 2*q[0]*q[2],
         2*q[1]*q[2] + 2*q[0]*q[3], q[0]*q[0] - q[1]*q[1] + q[2]*q[2] - q[3]*q[3], 2*q[2]*q[3] - 2*q[0]*q[1],
@@ -139,8 +137,7 @@ Eigen::Matrix3f quat2rmat(const Eigen::Vector4f& q) {
 }
 
 // Derivatives of the rotation matrix w.r.t. the quaternion of the quat2rmat() function.
-// Eigen::Matrix3d quat2rmat_d(const Eigen::Vector4d& q, Eigen::Matrix3d(&dR)[4]) {
-Eigen::Matrix3f quat2rmat_d(const Eigen::Vector4f& q, Eigen::Matrix3f(&dR)[4]) {
+Eigen::Matrix3d quat2rmat_d(const Eigen::Vector4d& q, Eigen::Matrix3d(&dR)[4]) {
     dR[0] <<
         2*q(0), -2*q(3),  2*q(2),
         2*q(3),  2*q(0), -2*q(1),
@@ -160,8 +157,8 @@ Eigen::Matrix3f quat2rmat_d(const Eigen::Vector4f& q, Eigen::Matrix3f(&dR)[4]) {
     return quat2rmat(q);
 }
 
-Eigen::Matrix4f make_pose_matrix(Eigen::Matrix3f const &R, Eigen::Vector3f const &t) {
-    Eigen::Matrix4f pose = Eigen::Matrix4f::Zero();
+Eigen::Matrix4d make_pose_matrix(Eigen::Matrix3d const &R, Eigen::Vector3d const &t) {
+    Eigen::Matrix4d pose = Eigen::Matrix4d::Zero();
     pose.block<3, 3>(0, 0) = R;
     pose.block<3, 1>(0, 3) = t;
     return pose;
@@ -182,44 +179,65 @@ int main(int argc, char* argv[])
     std::istream& input = std::cin;
 
     std::string line;
+    using tag_corners = std::array<std::array<float, 2>, 4>;
     struct frame_info
     {
         Eigen::Matrix4f intrinsic_matrix;
         Eigen::Matrix4f view_matrix;
-        TagDetectionArray detections;
+        std::vector<tag_corners> detections;
         std::string frame_path;
     };
     auto frames = std::vector<frame_info>{};
-    while (std::getline(input, line))
-    {
-        nlohmann::json j = nlohmann::json::parse(line);
-
-        auto f = frame_info{};
-
-        parse_camera_intrinsics(j["cameraIntrinsics"], /*f.projection_matrix,*/ f.intrinsic_matrix);
-        // We will scale images to half size, so have to adjust these focal lengths and principal point as well
-        f.intrinsic_matrix(0, 0) /= 2;
-        f.intrinsic_matrix(1, 1) /= 2;
-        f.intrinsic_matrix(0, 2) /= 2;
-        f.intrinsic_matrix(1, 2) /= 2;
-        parse_camera_extrinsics(j["cameraExtrinsics"], f.view_matrix);
-        f.frame_path = j["framePath"];
-
-        TagDetectorParams params;
-        auto tag_family = TagFamily(std::string("Tag36h11"));
-        TagDetector detector(tag_family, params);
-
-        auto temp_image = cv::imread(j["framePath"]);
-        auto image = cv::Mat{};
-        cv::resize(temp_image, image, temp_image.size() / 2);
-        detector.process(image, cv::Point2i{image.size().width, image.size().height}, f.detections);
-
-        if (f.detections.size() > 0)
+    size_t total_input_frames = 0;
+    auto input_parse_time = timing([&]{
+        while (std::getline(input, line))
         {
-            frames.push_back(f);
+            ++total_input_frames;
+            nlohmann::json j = nlohmann::json::parse(line);
+
+            auto f = frame_info{};
+
+            parse_camera_intrinsics(j["cameraIntrinsics"], /*f.projection_matrix,*/ f.intrinsic_matrix);
+            // We will scale images to half size, so have to adjust these focal lengths and principal point as well
+            f.intrinsic_matrix(0, 0) /= 2;
+            f.intrinsic_matrix(1, 1) /= 2;
+            f.intrinsic_matrix(0, 2) /= 2;
+            f.intrinsic_matrix(1, 2) /= 2;
+            parse_camera_extrinsics(j["cameraExtrinsics"], f.view_matrix);
+            f.frame_path = j["framePath"];
+
+            if (j.contains("markers"))
+            {
+                f.detections = j["markers"].get<std::vector<tag_corners>>();
+            }
+            else
+            {
+                auto temp_image = cv::imread(j["framePath"]);
+                auto image = cv::Mat{};
+                cv::resize(temp_image, image, temp_image.size() / 2);
+
+                TagDetectorParams params;
+                auto tag_family = TagFamily(std::string("Tag36h11"));
+                TagDetector detector(tag_family, params);
+                TagDetectionArray detections;
+
+                detector.process(image, cv::Point2i{image.size().width, image.size().height}, detections);
+
+                for (auto const &d : detections)
+                {
+                    f.detections.emplace_back();
+                    memcpy(&f.detections.back(), d.p, sizeof(d.p));
+                }
+            }
+
+            // For now, only consider frames where exactly only one Apriltag was detected
+            if (f.detections.size() == 1)
+            {
+                frames.push_back(f);
+            }
         }
-        assert(f.detections.size() < 2);
-    }
+    });
+    std::printf("Parsed input in %.2fs\n", input_parse_time);
 
     // Tag on the screen is 19.8cm (in arcore-7-1-single-2 data, where tag is shown on screen)
     auto const s = 0.198f;
@@ -243,13 +261,15 @@ int main(int argc, char* argv[])
     auto Ts = std::vector<cv::Vec3f>{};
     for (auto& f : frames)
     {
-        auto const& d = f.detections[0].p;
+        // auto const& d = f.detections[0].p;
+
+        auto const& d = f.detections[0];
 
         Ys.push_back({
-            cv::Point2f{ d[0].x, d[0].y }, // bottom-left
-            cv::Point2f{ d[1].x, d[1].y }, // bottom-right
-            cv::Point2f{ d[2].x, d[2].y }, // top-right
-            cv::Point2f{ d[3].x, d[3].y }, // top-left
+            cv::Point2f{ d[0][0], d[0][1] }, // bottom-left
+            cv::Point2f{ d[1][0], d[1][1] }, // bottom-right
+            cv::Point2f{ d[2][0], d[2][1] }, // top-right
+            cv::Point2f{ d[3][0], d[3][1] }, // top-left
         });
 
         Ks.push_back({
@@ -286,6 +306,7 @@ int main(int argc, char* argv[])
     auto Cs = std::vector<cv::Matx44f>{};
     auto K44s = std::vector<cv::Matx44f>{};
     auto K34s = std::vector<cv::Matx34f>{};
+    auto Ps = std::vector<cv::Matx34f>{};
     for (auto i = 0u; i < frames.size(); ++i)
     {
         auto const& frame = frames[i];
@@ -294,10 +315,10 @@ int main(int argc, char* argv[])
         auto& image = images.back();
         cv::resize(temp_image, image, temp_image.size() / 2);
         detected_points.push_back({
-            cv::Point2f{frame.detections[0].p[0].x, frame.detections[0].p[0].y},
-            cv::Point2f{frame.detections[0].p[1].x, frame.detections[0].p[1].y},
-            cv::Point2f{frame.detections[0].p[2].x, frame.detections[0].p[2].y},
-            cv::Point2f{frame.detections[0].p[3].x, frame.detections[0].p[3].y},
+            cv::Point2f{frame.detections[0][0][0], frame.detections[0][0][1]},
+            cv::Point2f{frame.detections[0][1][0], frame.detections[0][1][1]},
+            cv::Point2f{frame.detections[0][2][0], frame.detections[0][2][1]},
+            cv::Point2f{frame.detections[0][3][0], frame.detections[0][3][1]},
         });
 
         auto const& K = Ks[i];
@@ -311,6 +332,11 @@ int main(int argc, char* argv[])
             K(0, 0), K(0, 1), K(0, 2), 0,
             K(1, 0), K(1, 1), K(1, 2), 0,
             0, 0, 0, 1,
+        });
+        Ps.push_back({
+            K(0, 0), K(0, 1), K(0, 2), 0,
+            K(1, 0), K(1, 1), K(1, 2), 0,
+            K(2, 0), K(2, 1), K(2, 2), 0,
         });
         auto const& R = Rs[i];
         auto const& T = Ts[i];
@@ -439,7 +465,6 @@ int main(int argc, char* argv[])
     //     std::printf("E(M_0) = %.2f (Error for M0 initialized from first frame, no optimization)\n", mse);
     // }
 
-    // TODO: Gauss-Newton optimization for M
     cv::Matx44f optimized_M = cv::Matx44f::eye();
 
     // TODO check all column/row initializations again
@@ -448,7 +473,7 @@ int main(int argc, char* argv[])
     {
         // TODO: [0, s] or [-s/2, s/2] ?
         // Probably does not affect solution, as long as we are consistent
-        Eigen::Matrix4f Z = Eigen::Matrix4f {
+        Eigen::Matrix4d Z = Eigen::Matrix4d {
             { -s/2, -s/2, 0, 1, }, // bottom-left
             { s/2, -s/2, 0, 1, }, // bottom-right
             { s/2, s/2, 0, 1, }, // top-right
@@ -456,123 +481,158 @@ int main(int argc, char* argv[])
         };
         Z.transposeInPlace();
 
-        Eigen::Matrix4f M0;
-        {
-            auto cv_M0 = Vs[0].inv() * Cs[0];
-            M0 <<
-                cv_M0(0, 0), cv_M0(0, 1), cv_M0(0, 2), cv_M0(0, 3),
-                cv_M0(1, 0), cv_M0(1, 1), cv_M0(1, 2), cv_M0(1, 3),
-                cv_M0(2, 0), cv_M0(2, 1), cv_M0(2, 2), cv_M0(2, 3),
-                cv_M0(3, 0), cv_M0(3, 1), cv_M0(3, 2), cv_M0(3, 3);
-            M0.transposeInPlace();
-        }
+        cv::Matx44f cv_M0 = Vs[0].inv() * Cs[0];
+        Eigen::Matrix4d M0;
+        M0 <<
+            cv_M0(0, 0), cv_M0(0, 1), cv_M0(0, 2), cv_M0(0, 3),
+            cv_M0(1, 0), cv_M0(1, 1), cv_M0(1, 2), cv_M0(1, 3),
+            cv_M0(2, 0), cv_M0(2, 1), cv_M0(2, 2), cv_M0(2, 3),
+            cv_M0(3, 0), cv_M0(3, 1), cv_M0(3, 2), cv_M0(3, 3);
 
-        auto optimize_step = [&](Eigen::Vector3f const& t, Eigen::Vector4f const& q)
+        auto optimize_step = [&](Eigen::Vector3d const& t, Eigen::Vector4d const& q)
         {
-            Eigen::Matrix4f M = make_pose_matrix(quat2rmat(q), t);
+            Eigen::Matrix4d M = make_pose_matrix(quat2rmat(q), t);
 
             // Accumulate A and b over all frames and tag corners
-            Eigen::Matrix<float, 7, 7> A = Eigen::Matrix<float, 7, 7>::Zero();
-            Eigen::Vector<float, 7> b = Eigen::Vector<float, 7>::Zero();
+            Eigen::Matrix<double, 7, 7> A = Eigen::Matrix<double, 7, 7>::Zero();
+            Eigen::Vector<double, 7> b = Eigen::Vector<double, 7>::Zero();
             for (size_t j = 0; j < frames.size(); ++j)
             {
+                Eigen::Matrix<double, 3, 4> P = frames[j].intrinsic_matrix.block<3, 4>(0, 0).cast<double>();
+                Eigen::Matrix4d V = frames[j].view_matrix.cast<double>();
+                Eigen::Matrix<double, 3, 4> PV = P * V;
+
                 // TODO: simplify, recompute stuff much less
                 for (size_t k = 0; k < 4; ++k)
                 {
-                    Eigen::Matrix<float, 2, 7> J_jk;
-
                     // Compute translation and orientation derivatives
-                    Eigen::Matrix4f dMdXi[7];
+                    Eigen::Matrix4d dMdXi[7];
                     // t1, t2, t3
                     for (size_t i = 0; i < 3; ++i)
                     {
-                        dMdXi[i] = Eigen::Matrix4f::Zero();
+                        dMdXi[i] = Eigen::Matrix4d::Zero();
                         dMdXi[i](i, 3) = 1;
                     }
                     // q1, q2, q3, q4
-                    Eigen::Matrix3f dRdq[4];
+                    Eigen::Matrix3d dRdq[4];
                     quat2rmat_d(q, dRdq);
                     for (size_t i = 0; i < 4; ++i)
                     {
-                        dMdXi[3 + i] = Eigen::Matrix4f::Zero();
+                        dMdXi[3 + i] = Eigen::Matrix4d::Zero();
                         dMdXi[3 + i].block<3, 3>(0, 0) = dRdq[i];
-                        dMdXi[3 + i](3, 3) = 1;
                     }
 
                     // Projection of z_k with current M
-                    Eigen::Matrix<float, 3, 4> P = frames[j].intrinsic_matrix.block<3, 4>(0, 0);
-                    auto const& V = frames[j].view_matrix;
-                    Eigen::Vector3f xyw = P * V * M * Z.col(k);
+                    Eigen::Vector3d xyw = PV * M * Z.col(k);
 
                     // Jg
-                    float w2 = xyw(2) * xyw(2);
-                    auto const Jg = Eigen::Matrix<float, 2, 3>{
+                    double w2 = xyw(2) * xyw(2);
+                    Eigen::Matrix<double, 2, 3> Jg = Eigen::Matrix<double, 2, 3>{
                         {1.0f / xyw(2), 0, -xyw(0) / w2},
                         {0, 1.0f / xyw(2), -xyw(1) / w2},
                     };
 
-                    Eigen::Matrix<float, 2, 4> Jg_P_V = Jg * P * V;
+                    Eigen::Matrix<double, 2, 4> Jg_P_V = Jg * PV;
+                    Eigen::Matrix<double, 2, 7> J_jk;
                     for (size_t i = 0; i < 7; ++i)
                     {
                         J_jk.block<2, 1>(0, i) = Jg_P_V * dMdXi[i] * Z.col(k);
                     }
 
                     A += J_jk.transpose() * J_jk;
-                    Eigen::Vector2f xy = { xyw(0) / xyw(2), xyw(1) / xyw(2) };
-                    auto const& p = frames[j].detections[0].p[k];
-                    Eigen::Vector2f xy_true = Eigen::Vector2f{ p.x, p.y };
-                    Eigen::Vector2f residual = xy - xy_true;
+                    Eigen::Vector2d xy = { xyw(0) / xyw(2), xyw(1) / xyw(2) };
+                    Eigen::Vector2d xy_detected = Eigen::Vector2d{ (double)Ys[j][k].x, (double)Ys[j][k].y };
+                    Eigen::Vector2d residual = xy - xy_detected;
                     b -= J_jk.transpose() * residual;
                 }
             }
 
-            Eigen::Matrix<float, 7, 7> A_inv;
-            Eigen::Vector<float, 7> dx = A_inv * b;
+            // Eigen::Matrix<double, 7, 7> A_inv = A.inverse();
+            // std::cout << A_inv << std::endl;
+            // auto A_det = A.determinant();
+            // assert(A_det > 0.01f);
+            // Eigen::Vector<double, 7> dx = A_inv * b;
+
+            Eigen::Vector<double, 7> dx = A.colPivHouseholderQr().solve(b);
 
             return dx;
         };
 
-        Eigen::Matrix4f M = M0;
-        Eigen::Vector3f t = M.block<3, 1>(0, 3);
-        Eigen::Quaternionf qq(Eigen::AngleAxisf(M.block<3, 3>(0, 0)));
-        Eigen::Vector4f q = { qq.x(), qq.y(), qq.z(), qq.w(), };
+        Eigen::Matrix4d M = M0;
+        Eigen::Vector3d t = M.block<3, 1>(0, 3);
+        Eigen::Quaterniond qq(Eigen::AngleAxisd(M.block<3, 3>(0, 0)));
+        Eigen::Vector4d q = { qq.x(), qq.y(), qq.z(), qq.w(), };
 
-        for (size_t step = 0; step < 100; ++step)
-        {
-            auto dx = optimize_step(t, q);
-            t += dx.block<3, 1>(0, 0);
-            q += dx.block<4, 1>(3, 0);
-            qq = Eigen::Quaternionf{ q.x(), q.y(), q.z(), q.w() };
-            qq.normalize(); // TODO: Make sure this is the quaternion normalization, not vec4 normalization
-            q = { qq.x(), qq.y(), qq.z(), qq.w(), };
-            std::cout << "q: " << q << "\n";
-        }
-        M = make_pose_matrix(quat2rmat(q), t);
-        optimized_M = {
-            M(0, 0), M(0, 1), M(0, 2), M(0, 3),
-            M(1, 0), M(1, 1), M(1, 2), M(1, 3),
-            M(2, 0), M(2, 1), M(2, 2), M(2, 3),
-            M(3, 0), M(3, 1), M(3, 2), M(3, 3),
-        };
+        auto optimization_time = timing([&]{
+            for (size_t step = 0; step < 100; ++step)
+            {
+                // auto dx = optimize_step(t, q);
+                Eigen::Vector<double, 7> dx;
+                auto step_time = timing([&]{ dx = optimize_step(t, q); });
+                // dx *= .1;
+                t += dx.block<3, 1>(0, 0);
+                q += dx.block<4, 1>(3, 0);
+                qq = Eigen::Quaterniond{ q.x(), q.y(), q.z(), q.w() };
+                qq.normalize();
+                q = { qq.x(), qq.y(), qq.z(), qq.w(), };
+                // std::cout << "dx: " << dx << std::endl;
+                // std::cout << "t: " << t << std::endl;
+                // std::cout << "q: " << q << std::endl;
+                std::cout << "Step " << step << ": |dx| = " << dx.norm();
+                std::printf("\t\t(step time: %.2fs)", step_time);
+                std::cout << std::endl;
+            }
+            M = make_pose_matrix(quat2rmat(q), t);
+            Eigen::Matrix4f Mf = M.cast<float>();
+            optimized_M = {
+                Mf(0, 0), Mf(0, 1), Mf(0, 2), Mf(0, 3),
+                Mf(1, 0), Mf(1, 1), Mf(1, 2), Mf(1, 3),
+                Mf(2, 0), Mf(2, 1), Mf(2, 2), Mf(2, 3),
+                Mf(3, 0), Mf(3, 1), Mf(3, 2), Mf(3, 3),
+            };
+        });
+        std::printf("Total optimization time: %.2fs\n", optimization_time);
     }
+
+
+    std::vector<std::array<cv::Point2f, 4>> optimized_M_projected_points;
+    for (size_t i = 0; i < frames.size(); ++i)
+    {
+        optimized_M_projected_points.push_back({});
+        auto& proj = optimized_M_projected_points.back();
+        for (auto iz = 0; iz < 4; ++iz)
+        {
+            // auto const& K = K44s[i];
+            // cv::Vec4f proj_h = K * Vs[i] * optimized_M * Z4[iz];
+            // auto const& K = K34s[i];
+            cv::Vec3f proj_h = Ps[i] * Vs[i] * optimized_M * Z4[iz];
+            proj_h[0] /= proj_h[2];
+            proj_h[1] /= proj_h[2];
+            proj[iz] = { proj_h[0], proj_h[1] };
+            // assert(std::abs(proj_h[3] - 1.0f) < 0.01);
+        }
+    }
+    // visualize_projections(images, detected_points, optimized_M_projected_points, Ts, Rs);
 
     // Final score
     {
-        auto mse = 0.0f;
-        for (auto j = 0u; j < frames.size(); ++j)
+        auto mse = 0.0;
+        for (size_t j = 0; j < frames.size(); ++j)
         {
             auto frame_mse = 0.0f;
-            for (auto k = 0u; k < 4; ++k)
+            for (size_t k = 0; k < 4; ++k)
             {
                 auto y = cv::Vec2f{ Ys[j][k].x, Ys[j][k].y };
-                // frame_mse += projection_error(K44s[j], Vs[j], optimized_M, Z4[k], y);
-                frame_mse += projection_error(K34s[j], Vs[j], optimized_M, Z4[k], y);
+                frame_mse += projection_error(Ps[j], Vs[j], optimized_M, Z4[k], y);
             }
-            std::printf("e_%u = %.2f\n", j, frame_mse);
+            std::printf("e_%zu = %.2f\n", j, frame_mse);
             mse += frame_mse;
         }
-        mse /= (frames.size() * 4);
+        std::printf("Total input frames: %zu\n", total_input_frames);
+        std::printf("Frames considered (single marker detected): %zu\n", frames.size());
         std::printf("E(M) = %.2f (Error for optimized M)\n", mse);
+        mse /= (frames.size() * 4);
+        std::printf("average error = %.2f (Error for optimized M)\n", mse);
     }
 
 }
