@@ -40,14 +40,14 @@ static auto timing = [](auto& f) {
 };
 
 void parse_camera_intrinsics(json const &camera_intrinsics,
-                             Eigen::Matrix4f& intrinsic_matrix)
+                             Eigen::Matrix4d& intrinsic_matrix)
 {
     auto const focal_length_x = camera_intrinsics["focalLengthX"].get<float>();
     auto const focal_length_y = camera_intrinsics["focalLengthY"].get<float>();
     auto const principal_point_x = camera_intrinsics["principalPointX"].get<float>();
     auto const principal_point_y = camera_intrinsics["principalPointY"].get<float>();
 
-    intrinsic_matrix = Eigen::Matrix4f::Zero();
+    intrinsic_matrix = Eigen::Matrix4d::Zero();
     intrinsic_matrix(0, 0) = focal_length_x;
     intrinsic_matrix(1, 1) = focal_length_y;
     intrinsic_matrix(0, 2) = principal_point_x;
@@ -55,26 +55,26 @@ void parse_camera_intrinsics(json const &camera_intrinsics,
     intrinsic_matrix(2, 2) = 1.0f;
 }
 
-void parse_camera_extrinsics(json const& camera_extrinsics, Eigen::Matrix4f& view_matrix)
+void parse_camera_extrinsics(json const& camera_extrinsics, Eigen::Matrix4d& view_matrix)
 {
     auto const& json_position = camera_extrinsics["position"];
-    Eigen::Vector3f p = {
-        json_position["x"].get<float>(),
-        json_position["y"].get<float>(),
-        json_position["z"].get<float>(),
+    Eigen::Vector3d p = {
+        json_position["x"].get<double>(),
+        json_position["y"].get<double>(),
+        json_position["z"].get<double>(),
     };
     auto const& json_orientation = camera_extrinsics["orientation"];
-    Eigen::Quaternionf q = {
-        json_orientation["w"].get<float>(),
-        json_orientation["x"].get<float>(),
-        json_orientation["y"].get<float>(),
-        json_orientation["z"].get<float>(),
+    Eigen::Quaterniond q = {
+        json_orientation["w"].get<double>(),
+        json_orientation["x"].get<double>(),
+        json_orientation["y"].get<double>(),
+        json_orientation["z"].get<double>(),
     };
-    Eigen::Matrix3f R = q.toRotationMatrix();
+    Eigen::Matrix3d R = q.toRotationMatrix();
 
     // TODO: maybe keep the original p and q handy as well
 
-    view_matrix = Eigen::Matrix4f::Zero();
+    view_matrix = Eigen::Matrix4d::Zero();
     view_matrix.block<3, 3>(0, 0) = R;
     view_matrix.block<3, 1>(0, 3) = -R * p;
     view_matrix(3, 3) = 1;
@@ -182,8 +182,8 @@ int main(int argc, char* argv[])
     using tag_corners = std::array<std::array<float, 2>, 4>;
     struct frame_info
     {
-        Eigen::Matrix4f intrinsic_matrix;
-        Eigen::Matrix4f view_matrix;
+        Eigen::Matrix4d intrinsic_matrix;
+        Eigen::Matrix4d view_matrix;
         std::vector<tag_corners> detections;
         std::string frame_path;
     };
@@ -239,6 +239,8 @@ int main(int argc, char* argv[])
     });
     std::printf("Parsed input in %.2fs\n", input_parse_time);
 
+    auto setup_start = std::chrono::steady_clock::now();
+
     // Tag on the screen is 19.8cm (in arcore-7-1-single-2 data, where tag is shown on screen)
     auto const s = 0.198f;
     std::vector<cv::Point3f> Z = {
@@ -273,16 +275,16 @@ int main(int argc, char* argv[])
         });
 
         Ks.push_back({
-            f.intrinsic_matrix(0, 0), f.intrinsic_matrix(0, 1), f.intrinsic_matrix(0, 2),
-            f.intrinsic_matrix(1, 0), f.intrinsic_matrix(1, 1), f.intrinsic_matrix(1, 2),
-            f.intrinsic_matrix(2, 0), f.intrinsic_matrix(2, 1), f.intrinsic_matrix(2, 2),
+            (float)f.intrinsic_matrix(0, 0), (float)f.intrinsic_matrix(0, 1), (float)f.intrinsic_matrix(0, 2),
+            (float)f.intrinsic_matrix(1, 0), (float)f.intrinsic_matrix(1, 1), (float)f.intrinsic_matrix(1, 2),
+            (float)f.intrinsic_matrix(2, 0), (float)f.intrinsic_matrix(2, 1), (float)f.intrinsic_matrix(2, 2),
         });
 
         Vs.push_back({
-            f.view_matrix(0, 0), f.view_matrix(0, 1), f.view_matrix(0, 2), f.view_matrix(0, 3),
-            f.view_matrix(1, 0), f.view_matrix(1, 1), f.view_matrix(1, 2), f.view_matrix(0, 3),
-            f.view_matrix(2, 0), f.view_matrix(2, 1), f.view_matrix(2, 2), f.view_matrix(0, 3),
-            f.view_matrix(3, 0), f.view_matrix(3, 1), f.view_matrix(3, 2), f.view_matrix(3, 3),
+            (float)f.view_matrix(0, 0), (float)f.view_matrix(0, 1), (float)f.view_matrix(0, 2), (float)f.view_matrix(0, 3),
+            (float)f.view_matrix(1, 0), (float)f.view_matrix(1, 1), (float)f.view_matrix(1, 2), (float)f.view_matrix(0, 3),
+            (float)f.view_matrix(2, 0), (float)f.view_matrix(2, 1), (float)f.view_matrix(2, 2), (float)f.view_matrix(0, 3),
+            (float)f.view_matrix(3, 0), (float)f.view_matrix(3, 1), (float)f.view_matrix(3, 2), (float)f.view_matrix(3, 3),
         });
 
         cv::Vec3f r;
@@ -306,7 +308,8 @@ int main(int argc, char* argv[])
     auto Cs = std::vector<cv::Matx44f>{};
     auto K44s = std::vector<cv::Matx44f>{};
     auto K34s = std::vector<cv::Matx34f>{};
-    auto Ps = std::vector<cv::Matx34f>{};
+    auto cv_Ps = std::vector<cv::Matx34f>{};
+    auto Ps = std::vector<Eigen::Matrix<double, 3, 4>>{};
     for (auto i = 0u; i < frames.size(); ++i)
     {
         auto const& frame = frames[i];
@@ -333,11 +336,12 @@ int main(int argc, char* argv[])
             K(1, 0), K(1, 1), K(1, 2), 0,
             0, 0, 0, 1,
         });
-        Ps.push_back({
+        cv_Ps.push_back({
             K(0, 0), K(0, 1), K(0, 2), 0,
             K(1, 0), K(1, 1), K(1, 2), 0,
             K(2, 0), K(2, 1), K(2, 2), 0,
         });
+        Ps.push_back(frame.intrinsic_matrix.block<3, 4>(0, 0).cast<double>());
         auto const& R = Rs[i];
         auto const& T = Ts[i];
         Cs.push_back({
@@ -469,6 +473,11 @@ int main(int argc, char* argv[])
 
     // TODO check all column/row initializations again
 
+    auto setup_end = std::chrono::steady_clock::now();
+    auto setup_dt = std::chrono::duration_cast<std::chrono::milliseconds>(setup_end - setup_start).count() * 1e-3f;
+
+    std::printf("Setup done in %.2fs\n", setup_dt);
+
     // TODO: single- or double-precision floats?
     {
         // TODO: [0, s] or [-s/2, s/2] ?
@@ -481,6 +490,12 @@ int main(int argc, char* argv[])
         };
         Z.transposeInPlace();
 
+        std::vector<Eigen::Matrix<double, 3, 4>> PVs;
+        for (size_t i = 0; i < frames.size(); ++i)
+        {
+            PVs.push_back(Ps[i] * frames[i].view_matrix);
+        }
+
         cv::Matx44f cv_M0 = Vs[0].inv() * Cs[0];
         Eigen::Matrix4d M0;
         M0 <<
@@ -488,6 +503,9 @@ int main(int argc, char* argv[])
             cv_M0(1, 0), cv_M0(1, 1), cv_M0(1, 2), cv_M0(1, 3),
             cv_M0(2, 0), cv_M0(2, 1), cv_M0(2, 2), cv_M0(2, 3),
             cv_M0(3, 0), cv_M0(3, 1), cv_M0(3, 2), cv_M0(3, 3);
+        // Eigen::Matrix4d M0 = Eigen::Matrix4d::Identity();
+
+        optimized_M = cv_M0;
 
         auto optimize_step = [&](Eigen::Vector3d const& t, Eigen::Vector4d const& q)
         {
@@ -498,9 +516,7 @@ int main(int argc, char* argv[])
             Eigen::Vector<double, 7> b = Eigen::Vector<double, 7>::Zero();
             for (size_t j = 0; j < frames.size(); ++j)
             {
-                Eigen::Matrix<double, 3, 4> P = frames[j].intrinsic_matrix.block<3, 4>(0, 0).cast<double>();
-                Eigen::Matrix4d V = frames[j].view_matrix.cast<double>();
-                Eigen::Matrix<double, 3, 4> PV = P * V;
+                Eigen::Matrix<double, 3, 4> PV = PVs[j];
 
                 // TODO: simplify, recompute stuff much less
                 for (size_t k = 0; k < 4; ++k)
@@ -547,37 +563,29 @@ int main(int argc, char* argv[])
                 }
             }
 
-            // Eigen::Matrix<double, 7, 7> A_inv = A.inverse();
-            // std::cout << A_inv << std::endl;
-            // auto A_det = A.determinant();
-            // assert(A_det > 0.01f);
-            // Eigen::Vector<double, 7> dx = A_inv * b;
-
             Eigen::Vector<double, 7> dx = A.colPivHouseholderQr().solve(b);
-
             return dx;
         };
 
         Eigen::Matrix4d M = M0;
         Eigen::Vector3d t = M.block<3, 1>(0, 3);
         Eigen::Quaterniond qq(Eigen::AngleAxisd(M.block<3, 3>(0, 0)));
+
+        // TODO: check if quat2rmat and quat2rmat_d expect q to be wxyz or xyzw
         Eigen::Vector4d q = { qq.x(), qq.y(), qq.z(), qq.w(), };
 
         auto optimization_time = timing([&]{
             for (size_t step = 0; step < 100; ++step)
             {
-                // auto dx = optimize_step(t, q);
                 Eigen::Vector<double, 7> dx;
                 auto step_time = timing([&]{ dx = optimize_step(t, q); });
-                // dx *= .1;
                 t += dx.block<3, 1>(0, 0);
                 q += dx.block<4, 1>(3, 0);
-                qq = Eigen::Quaterniond{ q.x(), q.y(), q.z(), q.w() };
+                // TODO: check if shuffle goes correctly for normalization
+                qq = Eigen::Quaterniond{ q.y(), q.z(), q.w(), q.x() };
+                // qq = Eigen::Quaterniond{ q.x(), q.y(), q.z(), q.w() };
                 qq.normalize();
                 q = { qq.x(), qq.y(), qq.z(), qq.w(), };
-                // std::cout << "dx: " << dx << std::endl;
-                // std::cout << "t: " << t << std::endl;
-                // std::cout << "q: " << q << std::endl;
                 std::cout << "Step " << step << ": |dx| = " << dx.norm();
                 std::printf("\t\t(step time: %.2fs)", step_time);
                 std::cout << std::endl;
@@ -602,17 +610,13 @@ int main(int argc, char* argv[])
         auto& proj = optimized_M_projected_points.back();
         for (auto iz = 0; iz < 4; ++iz)
         {
-            // auto const& K = K44s[i];
-            // cv::Vec4f proj_h = K * Vs[i] * optimized_M * Z4[iz];
-            // auto const& K = K34s[i];
-            cv::Vec3f proj_h = Ps[i] * Vs[i] * optimized_M * Z4[iz];
+            cv::Vec3f proj_h = cv_Ps[i] * Vs[i] * optimized_M * Z4[iz];
             proj_h[0] /= proj_h[2];
             proj_h[1] /= proj_h[2];
             proj[iz] = { proj_h[0], proj_h[1] };
-            // assert(std::abs(proj_h[3] - 1.0f) < 0.01);
         }
     }
-    // visualize_projections(images, detected_points, optimized_M_projected_points, Ts, Rs);
+    visualize_projections(images, detected_points, optimized_M_projected_points, Ts, Rs);
 
     // Final score
     {
@@ -623,9 +627,9 @@ int main(int argc, char* argv[])
             for (size_t k = 0; k < 4; ++k)
             {
                 auto y = cv::Vec2f{ Ys[j][k].x, Ys[j][k].y };
-                frame_mse += projection_error(Ps[j], Vs[j], optimized_M, Z4[k], y);
+                frame_mse += projection_error(cv_Ps[j], Vs[j], optimized_M, Z4[k], y);
             }
-            std::printf("e_%zu = %.2f\n", j, frame_mse);
+            // std::printf("e_%zu = %.2f\n", j, frame_mse);
             mse += frame_mse;
         }
         std::printf("Total input frames: %zu\n", total_input_frames);
