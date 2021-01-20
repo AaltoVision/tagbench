@@ -32,4 +32,4 @@ Preparing your own data (ffmpeg needs to be installed and in PATH)
     # Run the benchmark with your data
     # NOTE: currently very slow for large data
     cmake --build build/ --target tagbench --config Release
-    build/Release/tagbench.exe data/tagbench_input.jsonl
+    build/Release/tagbench.exe < data/tagbench_input.jsonl
