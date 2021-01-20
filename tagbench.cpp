@@ -15,24 +15,17 @@
 #include <iostream>
 #include <iomanip>
 #include <string>
-#include <chrono>
 #include <array>
 #include <algorithm>
 #include <exception>
+
+#include "pose_optimizer.h"
 
 using json = nlohmann::json;
 
 using mat2x4 = Eigen::Matrix<double, 2, 4>;
 using mat3x4 = Eigen::Matrix<double, 3, 4>;
 using mat4 = Eigen::Matrix4d;
-
-static auto throw_if_nan = [](auto const& m)
-{
-    if (m.hasNaN())
-    {
-        throw std::range_error("NaN encountered");
-    }
-};
 
 static auto view_images = [](auto& get_image, int size)
 {
@@ -45,14 +38,6 @@ static auto view_images = [](auto& get_image, int size)
         if (key == 'p') { i--; i = std::max(0, i); }
         else { i++; i = std::min(size - 1, i); };
     }
-};
-
-static auto timing = [](auto& f) {
-    auto start = std::chrono::steady_clock::now();
-    f();
-    auto end = std::chrono::steady_clock::now();
-    auto dt = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() * 1e-3f;
-    return dt;
 };
 
 void parse_camera_intrinsics(json const &camera_intrinsics,
@@ -131,6 +116,8 @@ void visualize_projections(cv::InputArrayOfArrays images,
         std::stringstream label;
         label << std::setprecision(3);
         label << "Image: " << i << "\n";
+        label << "Red: groundtruth\n";
+        label << "Green: projections\n";
         // label << "T: " << 10000* Ts[i] << "\n";
         // label << "R: " << Rs[i] << "\n";
 
@@ -146,43 +133,6 @@ void visualize_projections(cv::InputArrayOfArrays images,
 }
 
 
-Eigen::Matrix3d quat2rmat(const Eigen::Vector4d& q) {
-    Eigen::Matrix3d R;
-    R <<
-        q[0]*q[0]+q[1]*q[1]-q[2]*q[2]-q[3]*q[3], 2*q[1]*q[2] - 2*q[0]*q[3], 2*q[1]*q[3] + 2*q[0]*q[2],
-        2*q[1]*q[2] + 2*q[0]*q[3], q[0]*q[0] - q[1]*q[1] + q[2]*q[2] - q[3]*q[3], 2*q[2]*q[3] - 2*q[0]*q[1],
-        2*q[1]*q[3] - 2*q[0]*q[2], 2*q[2]*q[3] + 2*q[0]*q[1], q[0]*q[0] - q[1]*q[1] - q[2]*q[2] + q[3]*q[3];
-    return R;
-}
-
-// Derivatives of the rotation matrix w.r.t. the quaternion of the quat2rmat() function.
-Eigen::Matrix3d quat2rmat_d(const Eigen::Vector4d& q, Eigen::Matrix3d(&dR)[4]) {
-    dR[0] <<
-        2*q(0), -2*q(3),  2*q(2),
-        2*q(3),  2*q(0), -2*q(1),
-        -2*q(2),  2*q(1),  2*q(0);
-    dR[1] <<
-        2*q(1),  2*q(2),  2*q(3),
-        2*q(2), -2*q(1), -2*q(0),
-        2*q(3),  2*q(0), -2*q(1);
-    dR[2] <<
-        -2*q(2),  2*q(1),  2*q(0),
-        2*q(1),  2*q(2),  2*q(3),
-        -2*q(0),  2*q(3), -2*q(2);
-    dR[3] <<
-        -2*q(3), -2*q(0),  2*q(1),
-        2*q(0), -2*q(3),  2*q(2),
-        2*q(1),  2*q(2),  2*q(3);
-    return quat2rmat(q);
-}
-
-Eigen::Matrix4d make_pose_matrix(Eigen::Matrix3d const &R, Eigen::Vector3d const &t) {
-    Eigen::Matrix4d pose = Eigen::Matrix4d::Zero();
-    pose.block<3, 3>(0, 0) = R;
-    pose.block<3, 1>(0, 3) = t;
-    return pose;
-};
-
 // Create synthetic dataset of extrinsic (Vs) matrices, and groundtruth marker corner projections (Ys),
 // as well as the correct M expected from optimization.
 // Input is Z, which contains marker corners in object space as its columns, as well as P.
@@ -192,19 +142,28 @@ void create_synthetic_dataset(mat4 const& Z,
                               mat3x4 const& P,
                               std::vector<mat4>& Vs,
                               std::vector<mat2x4>& Ys,
-                              mat4& expected_M)
+                              mat4 const& M)
 {
-    mat4 M = mat4::Identity();
-    M.col(0) *= -1;
-    M.col(3) = 100*Eigen::Vector4d{ 0.5, -1, -2, 1 };
-
-    // Rotate 45 degrees left-right around Y axis
-    auto angles = Eigen::ArrayXd::LinSpaced(100, -M_PI/4, M_PI/4);
-    for (size_t i = 0; i < 100; ++i)
+    // Rotate 30 degrees left-right around Y axis
+    Eigen::VectorXd angles = Eigen::ArrayXd::LinSpaced(50, -M_PI/6, M_PI/6);
+    for (size_t i = 0; i < 50; ++i)
     {
-        Eigen::Vector3d t = Eigen::Vector3d::Zero();
+        Eigen::Vector3d t = Eigen::Vector3d{ 0, 0, -4 };
         Eigen::Matrix3d R = Eigen::AngleAxisd(angles[i], Eigen::Vector3d::UnitY()).toRotationMatrix();
         Vs.emplace_back();
+
+        // Vs.back() = make_pose_matrix(R, t);
+        Vs.back() = Eigen::Matrix4d::Zero();
+        Vs.back().block<3, 3>(0, 0) = R;
+        Vs.back().block<3, 1>(0, 3) = -R * t;
+        Vs.back()(3, 3) = 1;
+    }
+    for (size_t i = 0; i < 50; ++i)
+    {
+        Eigen::Vector3d t = Eigen::Vector3d{ 0, 0, -4 };
+        Eigen::Matrix3d R = Eigen::AngleAxisd(angles[i], Eigen::Vector3d::UnitX()).toRotationMatrix();
+        Vs.emplace_back();
+
         // Vs.back() = make_pose_matrix(R, t);
         Vs.back() = Eigen::Matrix4d::Zero();
         Vs.back().block<3, 3>(0, 0) = R;
@@ -225,155 +184,18 @@ void create_synthetic_dataset(mat4 const& Z,
     //     Vs.back() = make_pose_matrix(R, t);
     // }
 
-    // Create the correct projections
-    for (size_t i = 0; i < Vs.size(); ++i)
+    // Create groundtruth projections
+    auto PVs = std::vector<mat3x4>(Vs.size());
+    std::transform(Vs.begin(), Vs.end(),
+                    PVs.begin(), [&](auto const& V) -> mat3x4 { return P * V; });
+    Ys = project_corners(PVs, M, Z);
+
+    // Add noise in screen space x,y
+    for (auto& y : Ys)
     {
-        Ys.emplace_back();
-        for (size_t k = 0; k < 4; ++k)
-        {
-            Eigen::Vector3d p = P * Vs[i] * M * Z.col(k);
-            Ys.back().col(k) = Eigen::Vector2d{ p(0)/p(2), p(1)/p(2) };
-        }
+        y += mat2x4::Random() * 3;
+        // y.row(0) += Eigen::Matrix<double, 1, 4>::Random() * 3;
     }
-
-    expected_M = M;
-}
-
-Eigen::Vector<double, 7> optimize_step(
-    std::vector<mat3x4> const& PVs,
-    std::vector<mat2x4> const& Ys,
-    Eigen::Matrix4d const& Z,
-    Eigen::Vector3d const& t,
-    Eigen::Vector4d const& q)
-{
-    Eigen::Matrix4d M = make_pose_matrix(quat2rmat(q), t);
-
-    // Accumulate A and b over all frames and tag corners
-    Eigen::Matrix<double, 7, 7> A = Eigen::Matrix<double, 7, 7>::Zero();
-    Eigen::Vector<double, 7> b = Eigen::Vector<double, 7>::Zero();
-    for (size_t j = 0; j < PVs.size(); ++j)
-    {
-        Eigen::Matrix<double, 3, 4> PV = PVs[j];
-
-        // TODO: simplify, recompute stuff much less
-        for (size_t k = 0; k < 4; ++k)
-        {
-            // Compute translation and orientation derivatives
-            Eigen::Matrix4d dMdXi[7];
-            // t1, t2, t3
-            for (size_t i = 0; i < 3; ++i)
-            {
-                dMdXi[i] = Eigen::Matrix4d::Zero();
-                dMdXi[i](i, 3) = 1;
-            }
-            // q1, q2, q3, q4
-            Eigen::Matrix3d dRdq[4];
-            quat2rmat_d(q, dRdq);
-            for (size_t i = 0; i < 4; ++i)
-            {
-                dMdXi[3 + i] = Eigen::Matrix4d::Zero();
-                dMdXi[3 + i].block<3, 3>(0, 0) = dRdq[i];
-            }
-
-            // Projection of z_k with current M
-            Eigen::Vector3d xyw = PV * M * Z.col(k);
-
-            // Jg
-            double w2 = xyw(2) * xyw(2);
-            Eigen::Matrix<double, 2, 3> Jg = Eigen::Matrix<double, 2, 3>{
-                {1.0f / xyw(2), 0, -xyw(0) / w2},
-                {0, 1.0f / xyw(2), -xyw(1) / w2},
-            };
-
-            Eigen::Matrix<double, 2, 4> Jg_P_V = Jg * PV;
-            Eigen::Matrix<double, 2, 7> J_jk;
-            for (size_t i = 0; i < 7; ++i)
-            {
-                J_jk.col(i) = Jg_P_V * dMdXi[i] * Z.col(k);
-            }
-
-            A += J_jk.transpose() * J_jk;
-            Eigen::Vector2d xy = { xyw(0) / xyw(2), xyw(1) / xyw(2) };
-            Eigen::Vector2d xy_detected = Eigen::Vector2d{ (double)Ys[j](0, k), (double)Ys[j](1, k) };
-            Eigen::Vector2d residual = xy - xy_detected;
-            b -= J_jk.transpose() * residual;
-
-            throw_if_nan(A);
-            throw_if_nan(b);
-        }
-    }
-
-    Eigen::Vector<double, 7> dx = A.colPivHouseholderQr().solve(b);
-    throw_if_nan(dx);
-    return dx;
-};
-
-double calculate_mse(std::vector<mat2x4> const& p, std::vector<mat2x4> const& y)
-{
-    auto mse = 0.0;
-    for (size_t j = 0; j < p.size(); ++j)
-    {
-        mat2x4 residuals = p[j] - y[j];
-        auto r2 = (residuals.transpose() * residuals).diagonal();
-        auto frame_mse = r2.sum();
-        mse += frame_mse;
-    }
-    return mse;
-}
-
-std::vector<mat2x4> project_corners(std::vector<mat3x4> const& PVs, mat4 const& M, mat4 const& Z)
-{
-    auto projected = std::vector<mat2x4>{};
-    for (size_t i = 0; i < PVs.size(); ++i)
-    {
-        projected.push_back({});
-        auto& proj = projected.back();
-        for (auto iz = 0; iz < 4; ++iz)
-        {
-            Eigen::Vector3d proj_h = PVs[i] * M * Z.col(iz);
-            proj.col(iz) = Eigen::Vector2d{
-                proj_h(0) / proj_h(2),
-                proj_h(1) / proj_h(2),
-            };
-        }
-    }
-    return projected;
-}
-
-Eigen::Matrix4d optimize_pose(
-    std::vector<mat3x4> const& PVs,
-    std::vector<mat2x4> const& Ys,
-    Eigen::Matrix4d const& Z,
-    Eigen::Matrix4d const& M0
-    )
-{
-    Eigen::Matrix4d M = M0;
-    Eigen::Vector3d t = M.block<3, 1>(0, 3);
-    Eigen::Quaterniond qq(Eigen::AngleAxisd(M.block<3, 3>(0, 0)));
-
-    // TODO: check if quat2rmat and quat2rmat_d expect q to be wxyz or xyzw
-    Eigen::Vector4d q = { qq.x(), qq.y(), qq.z(), qq.w(), };
-
-    // TODO: actual threshold etc.
-    for (size_t step = 0; step < 100; ++step)
-    {
-        Eigen::Vector<double, 7> dx;
-        auto step_time = timing([&]{ dx = optimize_step(PVs, Ys, Z, t, q); });
-        t += dx.block<3, 1>(0, 0);
-        q += dx.block<4, 1>(3, 0);
-        qq = Eigen::Quaterniond{ q.x(), q.y(), q.z(), q.w() };
-        qq.normalize();
-        q = { qq.x(), qq.y(), qq.z(), qq.w(), };
-
-        M = make_pose_matrix(quat2rmat(q), t);
-        std::cout << "Step " << step << ": |dx| = " << dx.norm();
-        // std::printf("\t\tE(M) = %.2f", calculate_mse(project_corners(PVs, M, Z), Ys));
-        std::printf("\t\tE(M) = %.6e", calculate_mse(project_corners(PVs, M, Z), Ys));
-        std::printf("\t\t(step time: %.2fs)", step_time);
-        std::cout << std::endl;
-    }
-    // M = make_pose_matrix(quat2rmat(q), t);
-    return M;
 }
 
 
@@ -514,42 +336,44 @@ int main(int argc, char* argv[])
         { -s/2, s/2, 0, 1, }, // top-left
     };
     Z.transposeInPlace();
+    Z *= 1000;
 
     // Test fitting synthetic data
     {
         std::vector<mat4> Vs;
         std::vector<mat2x4> Ys;
-        mat4 synthetic_M;
         mat3x4 P = frames[0].intrinsic_matrix.block<3, 4>(0, 0).cast<double>();
+
+        // TODO: try with more complicated M
+        mat4 synthetic_M = mat4::Identity();
+        // synthetic_M.col(0) *= -1;
+        // synthetic_M.col(3) = 100*Eigen::Vector4d{ 0.5, -1, -2, 1 };
         create_synthetic_dataset(Z, P, Vs, Ys, synthetic_M);
 
         auto PVs = std::vector<mat3x4>(Vs.size());
         std::transform(Vs.begin(), Vs.end(),
                        PVs.begin(), [&](auto const& V) -> mat3x4 { return P * V; });
         
+        // TODO: maybe start with better initial estimate
         mat4 M0 = mat4::Identity();
         mat4 M = optimize_pose(PVs, Ys, Z, M0); 
-        if (M.hasNaN())
-        {
-            std::cout << "Pose estimation failed, solution is NaN" << std::endl;
-            return 1;
-        }
+        throw_if_nan_or_inf(M);
         auto projections = project_corners(PVs, M, Z);
         auto images = std::vector<cv::Mat>(PVs.size());
         for (auto& image : images) {
-            image = cv::Mat(cv::Size2d{ P(0, 2), P(1, 2) }, CV_8UC3, cv::Scalar(255, 255, 255));
+            image = cv::Mat(cv::Size2d{ 2*P(0, 2), 2*P(1, 2) }, CV_8UC3, cv::Scalar(255, 255, 255));
         }
-        for (auto& p : projections)
-        {
-            throw_if_nan(p);
-        }
-        // visualize_projections(images, Ys, projections);
-        // return 0;
+
+        std::for_each(PVs.begin(), PVs.end(), throw_if_nan_or_inf);
+        std::for_each(Ys.begin(), Ys.end(), throw_if_nan_or_inf);
+        std::for_each(projections.begin(), projections.end(), throw_if_nan_or_inf);
+
+        visualize_projections(images, Ys, projections);
     }
 
-    // Prepare some of the data into easier form...
+    // Prepare some of the data into easier form
     auto images = std::vector<cv::Mat>{};
-    auto Cs = std::vector<cv::Matx44f>{};
+    auto Cs = std::vector<mat4>{};
     auto Ps = std::vector<mat3x4>{};
     for (auto i = 0u; i < frames.size(); ++i)
     {
@@ -562,12 +386,13 @@ int main(int argc, char* argv[])
         Ps.push_back(frame.intrinsic_matrix.block<3, 4>(0, 0).cast<double>());
         auto const& R = Rs[i];
         auto const& T = Ts[i];
-        Cs.push_back({
-            R(0, 0), R(0, 1), R(0, 2), T(0),
+
+        mat4 C;
+        C << R(0, 0), R(0, 1), R(0, 2), T(0),
             R(1, 0), R(1, 1), R(1, 2), T(1),
             R(2, 0), R(2, 1), R(2, 2), T(2),
-            0, 0, 0, 1,
-        });
+            0, 0, 0, 1;
+        Cs.push_back(C);
     }
 
     auto setup_end = std::chrono::steady_clock::now();
@@ -580,42 +405,35 @@ int main(int argc, char* argv[])
         PVs.push_back(Ps[i] * frames[i].view_matrix);
     }
 
-    cv::Matx44f cv_M0 = Vs[0].inv() * Cs[0];
-    Eigen::Matrix4d M0;
-    M0 <<
-        cv_M0(0, 0), cv_M0(0, 1), cv_M0(0, 2), cv_M0(0, 3),
-        cv_M0(1, 0), cv_M0(1, 1), cv_M0(1, 2), cv_M0(1, 3),
-        cv_M0(2, 0), cv_M0(2, 1), cv_M0(2, 2), cv_M0(2, 3),
-        cv_M0(3, 0), cv_M0(3, 1), cv_M0(3, 2), cv_M0(3, 3);
-
-    mat4 optimized_M = mat4::Identity();
-
+    mat4 M0 = frames[0].view_matrix.inverse() * Cs[0];
+    mat4 optimized_M;
     auto optimization_time = timing([&]{
         optimized_M = optimize_pose(PVs, Ys, Z, M0);
     });
     std::printf("Total optimization time: %.2fs\n", optimization_time);
 
     auto optimized_M_projected_points = project_corners(PVs, optimized_M, Z);
-    // TODO: consider get_image kind of thing here, because loading 400 images (and resizing) takes 7.5s in release build...
-    // visualize_projections(images, Ys, optimized_M_projected_points);
+    // TODO: consider get_image kind of thing here, because loading and resizing 400 images upfront takes 7.5s in release build...
+    visualize_projections(images, Ys, optimized_M_projected_points);
 
     // Final score
-    auto mse = 0.0;
-    auto average_pixel_distance = 0.0;
-    for (size_t j = 0; j < frames.size(); ++j)
-    {
-        mat2x4 residuals = optimized_M_projected_points[j] - Ys[j];
-        auto r2 = (residuals.transpose() * residuals).diagonal();
-        average_pixel_distance += r2.cwiseSqrt().sum();
-        auto frame_mse = r2.sum();
-        mse += frame_mse;
-        // std::printf("e_%zu = %.2f\n", j, frame_mse);
-    }
-    average_pixel_distance /= (frames.size() * 4);
+    auto mse = calculate_mse(optimized_M_projected_points, Ys);
+    // auto mse = 0.0;
+    // auto average_pixel_distance = 0.0;
+    // for (size_t j = 0; j < frames.size(); ++j)
+    // {
+    //     mat2x4 residuals = optimized_M_projected_points[j] - Ys[j];
+    //     auto r2 = (residuals.transpose() * residuals).diagonal();
+    //     average_pixel_distance += r2.cwiseSqrt().sum();
+    //     auto frame_mse = r2.sum();
+    //     mse += frame_mse;
+    //     // std::printf("e_%zu = %.2f\n", j, frame_mse);
+    // }
+    // average_pixel_distance /= (frames.size() * 4);
     std::printf("Total input frames: %zu\n", total_input_frames);
     std::printf("Frames considered (single marker detected): %zu\n", frames.size());
     std::printf("E(M) = %.2f (Error for optimized M)\n", mse);
-    std::printf("E(M)/n_corners = %.2f\n", mse / (frames.size() * 4));
-    std::printf("Average pixel distance = %.2f\n", average_pixel_distance);
+    // std::printf("E(M)/n_corners = %.2f\n", mse / (frames.size() * 4));
+    // std::printf("Average pixel distance = %.2f\n", average_pixel_distance);
 
 }
