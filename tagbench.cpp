@@ -1,7 +1,12 @@
+#ifndef _USE_MATH_DEFINES
 #define _USE_MATH_DEFINES
+#endif
 #include <cmath>
 
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
+
 #include <json.hpp>
 #include <Eigen/Dense>
 #include <TagDetector.h>
@@ -95,16 +100,14 @@ void put_text_lines(cv::Mat& image, std::stringstream& text)
     }
 }
 
-void visualize_projections(cv::InputArrayOfArrays images,
+void visualize_projections(std::function<cv::Mat(int)> get_image, size_t image_count,
                            std::vector<mat2x4> const& detections,
                            std::vector<mat2x4> const& projections
-                        //    std::vector<cv::Vec3f> const& Ts,
-                        //    std::vector<cv::Matx33f> const& Rs
                            )
 {
-    auto get_image = [&](int i)
+    auto get_labeled_image = [&](int i)
     {
-        cv::Mat image_with_projections = images.getMat(i).clone();
+        cv::Mat image_with_projections = get_image(i).clone();
         for (auto j = 0; j < 4; ++j)
         {
             auto detected_point = cv::Point2d{ detections[i](0, j), detections[i](1, j) };
@@ -118,18 +121,11 @@ void visualize_projections(cv::InputArrayOfArrays images,
         label << "Image: " << i << "\n";
         label << "Red: groundtruth\n";
         label << "Green: projections\n";
-        // label << "T: " << 10000* Ts[i] << "\n";
-        // label << "R: " << Rs[i] << "\n";
-
-        // cv::Ptr<cv::Formatter> formatMat = cv::Formatter::get(cv::Formatter::FMT_DEFAULT);
-        // formatMat->set64fPrecision(3);
-        // formatMat->set32fPrecision(3);
-        // label << "R:\n" << formatMat->format( cv::Mat(Rs[i]) ) << std::endl;
 
         put_text_lines(image_with_projections, label);
         return image_with_projections;
     };
-    view_images(get_image, images.size().width);
+    view_images(get_labeled_image, (int)image_count);
 }
 
 
@@ -145,8 +141,8 @@ void create_synthetic_dataset(mat4 const& Z,
                               mat4 const& M)
 {
     // Rotate 30 degrees left-right around Y axis
-    Eigen::VectorXd angles = Eigen::ArrayXd::LinSpaced(50, -M_PI/6, M_PI/6);
-    for (size_t i = 0; i < 50; ++i)
+    Eigen::VectorXd angles = Eigen::ArrayXd::LinSpaced(32, -M_PI/6, M_PI/6);
+    for (size_t i = 0; i < 32; ++i)
     {
         Eigen::Vector3d t = Eigen::Vector3d{ 0, 0, -4 };
         Eigen::Matrix3d R = Eigen::AngleAxisd(angles[i], Eigen::Vector3d::UnitY()).toRotationMatrix();
@@ -158,7 +154,7 @@ void create_synthetic_dataset(mat4 const& Z,
         Vs.back().block<3, 1>(0, 3) = -R * t;
         Vs.back()(3, 3) = 1;
     }
-    for (size_t i = 0; i < 50; ++i)
+    for (size_t i = 0; i < 32; ++i)
     {
         Eigen::Vector3d t = Eigen::Vector3d{ 0, 0, -4 };
         Eigen::Matrix3d R = Eigen::AngleAxisd(angles[i], Eigen::Vector3d::UnitX()).toRotationMatrix();
@@ -172,30 +168,27 @@ void create_synthetic_dataset(mat4 const& Z,
     }
 
     // Translate in a circle around Z axis, looking towards Z-
-    // double d_angle = 2.0 * M_PI / 100;
-    // Eigen::Quaterniond q = Eigen::Quaterniond::Identity();
-    // double t_magnitude = 10; // TODO: relate to pixels (through s and resolution)
-    // for (size_t i = 0; i < 100; ++i)
-    // {
-    //     Eigen::Vector3d t = Eigen::AngleAxisd(i * d_angle, -Eigen::Vector3d::UnitZ()) * Eigen::Vector3d{ 1, 0, 0 } * t_magnitude;
-    //     Eigen::Matrix3d R = Eigen::Matrix3d::Identity();
-    //     R(2, 2) = -1; // Look at Z-
-    //     Vs.emplace_back();
-    //     Vs.back() = make_pose_matrix(R, t);
-    // }
+    double d_angle = 2.0 * M_PI / 32;
+    double t_magnitude = 0.5; // TODO: relate to pixels (through s and resolution)
+    for (size_t i = 0; i < 32; ++i)
+    {
+        Eigen::Vector3d t = Eigen::AngleAxisd(i * d_angle, -Eigen::Vector3d::UnitZ()) * Eigen::Vector3d::UnitX() * t_magnitude;
+        t(2) = -4;
+        Eigen::Matrix3d R = Eigen::Matrix3d::Identity();
+        // R(2, 2) = -1; // Look at Z-
+        Vs.emplace_back();
+        // Vs.back() = make_pose_matrix(R, t);
+        Vs.back() = Eigen::Matrix4d::Zero();
+        Vs.back().block<3, 3>(0, 0) = R;
+        Vs.back().block<3, 1>(0, 3) = -R * t;
+        Vs.back()(3, 3) = 1;
+    }
 
     // Create groundtruth projections
     auto PVs = std::vector<mat3x4>(Vs.size());
     std::transform(Vs.begin(), Vs.end(),
                     PVs.begin(), [&](auto const& V) -> mat3x4 { return P * V; });
     Ys = project_corners(PVs, M, Z);
-
-    // Add noise in screen space x,y
-    for (auto& y : Ys)
-    {
-        y += mat2x4::Random() * 3;
-        // y.row(0) += Eigen::Matrix<double, 1, 4>::Random() * 3;
-    }
 }
 
 
@@ -285,14 +278,14 @@ int main(int argc, char* argv[])
         { -s/2, s/2, 0 }, // top-left
     };
 
-    auto Ys = std::vector<mat2x4>{};
+    // Prepare some of the data into easier form
     auto Vs = std::vector<cv::Matx44f>{};
-    auto Rs = std::vector<cv::Matx33f>{};
-    auto Ts = std::vector<cv::Vec3f>{};
+    auto Ys = std::vector<mat2x4>{};
+    auto Cs = std::vector<mat4>{};
+    auto Ps = std::vector<mat3x4>{};
     for (auto& f : frames)
     {
         auto const& d = f.detections[0];
-
         auto cv_Y = std::vector<cv::Point2f>{
             cv::Point2f{ d[0][0], d[0][1] }, // bottom-left
             cv::Point2f{ d[1][0], d[1][1] }, // bottom-right
@@ -318,25 +311,27 @@ int main(int argc, char* argv[])
         });
 
         cv::Vec3f r;
-        Ts.push_back(cv::Vec3f{});
-        auto& T = Ts.back();
+        cv::Vec3f T;
         cv::solvePnP(cv_Z, cv_Y, K, cv::Vec4f{ 0, 0, 0, 0 }, r, T);
-
-        Rs.push_back({});
-        auto& R = Rs.back();
+        cv::Matx33f R;
         cv::Rodrigues(r, R);
+        mat4 C;
+        C << R(0, 0), R(0, 1), R(0, 2), T(0),
+            R(1, 0), R(1, 1), R(1, 2), T(1),
+            R(2, 0), R(2, 1), R(2, 2), T(2),
+            0, 0, 0, 1;
+        Cs.push_back(C);
+
+        Ps.push_back(f.intrinsic_matrix.block<3, 4>(0, 0).cast<double>());
     }
 
     // TODO: [0, s] or [-s/2, s/2] ?
     // Probably does not affect solution, as long as we are consistent
-    mat4 Z = mat4 {
-        { -s/2, -s/2, 0, 1, }, // bottom-left
-        { s/2, -s/2, 0, 1, }, // bottom-right
-        { s/2, s/2, 0, 1, }, // top-right
-        { -s/2, s/2, 0, 1, }, // top-left
-    };
-    Z.transposeInPlace();
-    Z *= 1000;
+    mat4 Z;
+    Z.col(0) = Eigen::Vector4d{ -s/2, -s/2, 0, 1, }; // bottom-left
+    Z.col(1) = Eigen::Vector4d{ s/2, -s/2, 0, 1, }; // bottom-right
+    Z.col(2) = Eigen::Vector4d{ s/2, s/2, 0, 1, }; // top-right
+    Z.col(3) = Eigen::Vector4d{ -s/2, s/2, 0, 1, }; // top-left
 
     // Test fitting synthetic data
     {
@@ -354,9 +349,18 @@ int main(int argc, char* argv[])
         std::transform(Vs.begin(), Vs.end(),
                        PVs.begin(), [&](auto const& V) -> mat3x4 { return P * V; });
         
+        // Add noise in screen space x,y
+        auto noisy_Ys = Ys;
+        for (auto& y : noisy_Ys)
+        {
+            y += mat2x4::Random() * 2;
+            // y.row(0) += Eigen::Matrix<double, 1, 4>::Random() * 2;
+        }
+
         // TODO: maybe start with better initial estimate
         mat4 M0 = mat4::Identity();
-        mat4 M = optimize_pose(PVs, Ys, Z, M0); 
+        // mat4 M = optimize_pose(PVs, Ys, Z, M0);
+        mat4 M = optimize_pose(PVs, noisy_Ys, Z, M0);
         throw_if_nan_or_inf(M);
         auto projections = project_corners(PVs, M, Z);
         auto images = std::vector<cv::Mat>(PVs.size());
@@ -368,31 +372,8 @@ int main(int argc, char* argv[])
         std::for_each(Ys.begin(), Ys.end(), throw_if_nan_or_inf);
         std::for_each(projections.begin(), projections.end(), throw_if_nan_or_inf);
 
-        visualize_projections(images, Ys, projections);
-    }
-
-    // Prepare some of the data into easier form
-    auto images = std::vector<cv::Mat>{};
-    auto Cs = std::vector<mat4>{};
-    auto Ps = std::vector<mat3x4>{};
-    for (auto i = 0u; i < frames.size(); ++i)
-    {
-        auto const& frame = frames[i];
-        auto temp_image = cv::imread(frame.frame_path);
-        images.push_back({});
-        auto& image = images.back();
-        cv::resize(temp_image, image, temp_image.size() / 2);
-
-        Ps.push_back(frame.intrinsic_matrix.block<3, 4>(0, 0).cast<double>());
-        auto const& R = Rs[i];
-        auto const& T = Ts[i];
-
-        mat4 C;
-        C << R(0, 0), R(0, 1), R(0, 2), T(0),
-            R(1, 0), R(1, 1), R(1, 2), T(1),
-            R(2, 0), R(2, 1), R(2, 2), T(2),
-            0, 0, 0, 1;
-        Cs.push_back(C);
+        // visualize_projections([&](int i) { return images[i]; }, images.size(), noisy_Ys, projections);
+        // visualize_projections([&](int i) { return images[i]; }, images.size(), Ys, projections);
     }
 
     auto setup_end = std::chrono::steady_clock::now();
@@ -413,8 +394,13 @@ int main(int argc, char* argv[])
     std::printf("Total optimization time: %.2fs\n", optimization_time);
 
     auto optimized_M_projected_points = project_corners(PVs, optimized_M, Z);
-    // TODO: consider get_image kind of thing here, because loading and resizing 400 images upfront takes 7.5s in release build...
-    visualize_projections(images, Ys, optimized_M_projected_points);
+    auto get_scaled_frame = [&](int i) {
+        auto image = cv::Mat{};
+        auto temp_image = cv::imread(frames[i].frame_path);
+        cv::resize(temp_image, image, temp_image.size() / 2);
+        return image;
+    };
+    visualize_projections(get_scaled_frame, frames.size(), Ys, optimized_M_projected_points);
 
     // Final score
     auto mse = calculate_mse(optimized_M_projected_points, Ys);
