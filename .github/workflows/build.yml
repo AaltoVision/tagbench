@@ -7,6 +7,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
+    - name: Install opencv-dev library from apt
+      run: sudo apt install libopencv-dev
     - name: Generate build files with CMake
       run: mkdir -p build && cd build && cmake ..
     - name: Build input_data_preprocessor
@@ -18,6 +20,8 @@ jobs:
     runs-on: windows-latest
     steps:
     - uses: actions/checkout@v2
+    - name: Install opencv through Chocolatey
+      run: choco install opencv
     - name: Generate build files with CMake
       run: mkdir -p build && cd build && cmake ..
     - name: Build input_data_preprocessor
