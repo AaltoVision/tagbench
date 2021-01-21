@@ -31,7 +31,7 @@ static auto timing = [](auto const& f) {
 };
 
 // hacky, TODO some better way to contain the frame<->index info
-int parse_frame_number_from_path(std::filesystem::path const& path)
+int parse_frame_number_from_path(fs::path const& path)
 {
     return std::stoi(path.filename().stem().string().c_str());
 }
@@ -106,15 +106,15 @@ int main(int argc, char* argv[])
         }
     }
 
-    auto const input_dir = std::filesystem::path{ argv[1] };
+    auto const input_dir = fs::path{ argv[1] };
     auto const input_frames_dir = input_dir / "frames";
     auto input_sensor_readings = std::ifstream{ input_dir / "data.jsonl" };
 
     // Read in frame paths with their indices
-    auto frame_paths = std::map<int, std::filesystem::path>{};
-    auto frame_directory = std::filesystem::directory_iterator(input_frames_dir);
+    auto frame_paths = std::map<int, fs::path>{};
+    auto frame_directory = fs::directory_iterator(input_frames_dir);
     try {
-        std::transform(frame_directory, std::filesystem::directory_iterator{}, std::inserter(frame_paths, frame_paths.end()),
+        std::transform(frame_directory, fs::directory_iterator{}, std::inserter(frame_paths, frame_paths.end()),
             [](auto const& path)
             {
                 return std::make_pair(parse_frame_number_from_path(path), path);
