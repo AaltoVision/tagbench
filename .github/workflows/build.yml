@@ -1,0 +1,26 @@
+name: Build input_data_preprocessor and tagbench
+
+on: [push]
+
+jobs:
+  build_ubuntu:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Generate build files with CMake
+      run: mkdir -p build && cd build && cmake ..
+    - name: Build input_data_preprocessor
+      run: cmake --build build --target input_data_preprocessor
+    - name: Build tagbench
+      run: cmake --build build --target tagbench
+
+  build_windows:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Generate build files with CMake
+      run: mkdir -p build && cd build && cmake ..
+    - name: Build input_data_preprocessor
+      run: cmake --build build --target input_data_preprocessor
+    - name: Build tagbench
+      run: cmake --build build --target tagbench
