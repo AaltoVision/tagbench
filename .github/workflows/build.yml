@@ -23,7 +23,7 @@ jobs:
     - name: Install opencv through Chocolatey
       run: choco install opencv
     - name: Generate build files with CMake
-      run: mkdir -p build && cd build && cmake -DCMAKE_PREFIX_PATH=%OPENCV_DIR%
+      run: mkdir -p build && cd build && cmake -DCMAKE_PREFIX_PATH=%OPENCV_DIR% ..
     - name: Build input_data_preprocessor
       run: cmake --build build --target input_data_preprocessor
     - name: Build tagbench
