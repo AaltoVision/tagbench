@@ -8,7 +8,7 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: Install opencv-dev library from apt
-      run: sudo apt install libopencv-dev
+      run: sudo apt update && sudo apt install libopencv-dev
     - name: Generate build files with CMake
       run: mkdir -p build && cd build && cmake ..
     - name: Build input_data_preprocessor
@@ -23,7 +23,7 @@ jobs:
     - name: Install opencv through Chocolatey
       run: choco install opencv
     - name: Generate build files with CMake
-      run: mkdir -p build && cd build && cmake ..
+      run: mkdir -p build && cd build && cmake -DCMAKE_PREFIX_PATH=%OPENCV_DIR%
     - name: Build input_data_preprocessor
       run: cmake --build build --target input_data_preprocessor
     - name: Build tagbench
