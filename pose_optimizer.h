@@ -3,6 +3,7 @@
 #include <Eigen/Dense>
 #include <iostream>
 #include <chrono>
+#include <vector>
 
 using mat2x4 = Eigen::Matrix<double, 2, 4>;
 using mat3x4 = Eigen::Matrix<double, 3, 4>;
@@ -17,7 +18,7 @@ static auto throw_if_nan_or_inf = [](auto const& M)
     }
 };
 
-static auto timing = [](auto& f) {
+static auto timing = [](auto const& f) {
     auto start = std::chrono::steady_clock::now();
     f();
     auto end = std::chrono::steady_clock::now();

@@ -2,13 +2,19 @@
 #include <Eigen/Dense>
 #include <TagDetector.h>
 #include <DebugImage.h>
-#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <string>
 #include <chrono>
 #include <array>
-#include <optional>
+
+#if __has_include(<filesystem>)
+#include <filesystem>
+namespace fs = std::filesystem;
+#else
+#include <experimental/filesystem>
+namespace fs = std::experimental::filesystem;
+#endif
 
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
@@ -16,7 +22,7 @@
 
 using json = nlohmann::json;
 
-static auto timing = [](auto& f) {
+static auto timing = [](auto const& f) {
     auto start = std::chrono::steady_clock::now();
     f();
     auto end = std::chrono::steady_clock::now();
@@ -181,8 +187,8 @@ int main(int argc, char* argv[])
             j["framePath"] = frame_path.string();
             // TODO: j["frameTime"] perhaps
 
-            // auto frame = cv::imread(frame_path.string());
-            // j["markers"] = detect_marker_corners(frame);
+            auto frame = cv::imread(frame_path.string());
+            j["markers"] = detect_marker_corners(frame);
 
             fprintf(out, "%s\n", j.dump().c_str());
         }
