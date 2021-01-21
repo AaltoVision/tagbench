@@ -99,7 +99,8 @@ int main(int argc, char* argv[])
     FILE* out = stdout;
     if (argc > 2)
     {
-        if (fopen_s(&out, argv[2], "w"))
+        out = fopen(argv[2], "w");
+        if (!out)
         {
             std::cerr << "Failed to open output file" << std::endl;
             return 2;
