@@ -1,5 +1,4 @@
 #include <json.hpp>
-#include <Eigen/Dense>
 #include <TagDetector.h>
 #include <DebugImage.h>
 #include <fstream>

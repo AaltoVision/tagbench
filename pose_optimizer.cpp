@@ -30,7 +30,7 @@ Eigen::Matrix3d quat2rmat_d(const Eigen::Vector4d& q, Eigen::Matrix3d(&dR)[4]) {
     return quat2rmat(q);
 }
 
-double calculate_mse(std::vector<mat2x4> const& p, std::vector<mat2x4> const& y)
+double calculate_mse(e_vec<mat2x4> const& p, e_vec<mat2x4> const& y)
 {
     auto mse = 0.0;
     for (size_t j = 0; j < p.size(); ++j)
@@ -43,9 +43,9 @@ double calculate_mse(std::vector<mat2x4> const& p, std::vector<mat2x4> const& y)
     return mse;
 }
 
-std::vector<mat2x4> project_corners(std::vector<mat3x4> const& PVs, mat4 const& M, mat4 const& Z)
+e_vec<mat2x4> project_corners(e_vec<mat3x4> const& PVs, mat4 const& M, mat4 const& Z)
 {
-    auto projected = std::vector<mat2x4>(PVs.size());
+    auto projected = e_vec<mat2x4>(PVs.size());
     for (size_t i = 0; i < PVs.size(); ++i)
     {
         projected[i] = mat2x4::Zero();
@@ -71,8 +71,8 @@ Eigen::Matrix4d make_pose_matrix(Eigen::Matrix3d const &R, Eigen::Vector3d const
 };
 
 Eigen::Vector<double, 7> optimize_step(
-    std::vector<mat3x4> const& PVs,
-    std::vector<mat2x4> const& Ys,
+    e_vec<mat3x4> const& PVs,
+    e_vec<mat2x4> const& Ys,
     Eigen::Matrix4d const& Z,
     Eigen::Vector3d const& t,
     Eigen::Vector4d const& q)
@@ -147,8 +147,8 @@ Eigen::Vector<double, 7> optimize_step(
 };
 
 Eigen::Matrix4d optimize_pose(
-    std::vector<mat3x4> const& PVs,
-    std::vector<mat2x4> const& Ys,
+    e_vec<mat3x4> const& PVs,
+    e_vec<mat2x4> const& Ys,
     Eigen::Matrix4d const& Z,
     Eigen::Matrix4d const& M0
     )

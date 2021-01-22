@@ -21,7 +21,7 @@ target_link_libraries(input_data_preprocessor PRIVATE
 target_compile_features(input_data_preprocessor PUBLIC ${CPP_STANDARD})
 
 # tagbench (the main app)
-set(SRC tagbench.cpp pose_optimizer.cpp)
+set(SRC tagbench.cpp pose_optimizer.cpp pose_optimizer.h)
 add_executable(tagbench ${SRC})
 target_include_directories(tagbench PUBLIC "libs/" ${APRILTAGS_INCLUDE_DIRS})
 target_link_libraries(tagbench ${OpenCV_LIBS} apriltags)

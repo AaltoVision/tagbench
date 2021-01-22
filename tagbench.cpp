@@ -32,6 +32,10 @@ using mat2x4 = Eigen::Matrix<double, 2, 4>;
 using mat3x4 = Eigen::Matrix<double, 3, 4>;
 using mat4 = Eigen::Matrix4d;
 
+// Fixed-size Eigen types' allocation must be aligned
+template<typename T>
+using e_vec = std::vector<T, Eigen::aligned_allocator<T>>;
+
 static auto view_images = [](auto& get_image, int size)
 {
     int i = 0;
@@ -101,8 +105,8 @@ void put_text_lines(cv::Mat& image, std::stringstream& text)
 }
 
 void visualize_projections(std::function<cv::Mat(int)> get_image, size_t image_count,
-                           std::vector<mat2x4> const& detections,
-                           std::vector<mat2x4> const& projections
+                           e_vec<mat2x4> const& detections,
+                           e_vec<mat2x4> const& projections
                            )
 {
     auto get_labeled_image = [&](int i)
@@ -136,8 +140,8 @@ void visualize_projections(std::function<cv::Mat(int)> get_image, size_t image_c
 // have drift between matrices and images (same image may be reported with different V later).
 void create_synthetic_dataset(mat4 const& Z,
                               mat3x4 const& P,
-                              std::vector<mat4>& Vs,
-                              std::vector<mat2x4>& Ys,
+                              e_vec<mat4>& Vs,
+                              e_vec<mat2x4>& Ys,
                               mat4 const& M)
 {
     // Rotate 30 degrees left-right around Y axis
@@ -185,7 +189,7 @@ void create_synthetic_dataset(mat4 const& Z,
     }
 
     // Create groundtruth projections
-    auto PVs = std::vector<mat3x4>(Vs.size());
+    auto PVs = e_vec<mat3x4>(Vs.size());
     std::transform(Vs.begin(), Vs.end(),
                     PVs.begin(), [&](auto const& V) -> mat3x4 { return P * V; });
     Ys = project_corners(PVs, M, Z);
@@ -214,8 +218,9 @@ int main(int argc, char* argv[])
         Eigen::Matrix4d view_matrix;
         std::vector<tag_corners> detections;
         std::string frame_path;
+        EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     };
-    auto frames = std::vector<frame_info>{};
+    auto frames = e_vec<frame_info>{};
     size_t total_input_frames = 0;
     auto input_parse_time = timing([&]{
         while (std::getline(input, line))
@@ -280,9 +285,9 @@ int main(int argc, char* argv[])
 
     // Prepare some of the data into easier form
     auto Vs = std::vector<cv::Matx44f>{};
-    auto Ys = std::vector<mat2x4>{};
-    auto Cs = std::vector<mat4>{};
-    auto Ps = std::vector<mat3x4>{};
+    auto Ys = e_vec<mat2x4>{};
+    auto Cs = e_vec<mat4>{};
+    auto Ps = e_vec<mat3x4>{};
     for (auto& f : frames)
     {
         auto const& d = f.detections[0];
@@ -335,8 +340,8 @@ int main(int argc, char* argv[])
 
     // Test fitting synthetic data
     {
-        std::vector<mat4> Vs;
-        std::vector<mat2x4> Ys;
+        e_vec<mat4> Vs;
+        e_vec<mat2x4> Ys;
         mat3x4 P = frames[0].intrinsic_matrix.block<3, 4>(0, 0).cast<double>();
 
         // TODO: try with more complicated M
@@ -345,7 +350,7 @@ int main(int argc, char* argv[])
         // synthetic_M.col(3) = 100*Eigen::Vector4d{ 0.5, -1, -2, 1 };
         create_synthetic_dataset(Z, P, Vs, Ys, synthetic_M);
 
-        auto PVs = std::vector<mat3x4>(Vs.size());
+        auto PVs = e_vec<mat3x4>(Vs.size());
         std::transform(Vs.begin(), Vs.end(),
                        PVs.begin(), [&](auto const& V) -> mat3x4 { return P * V; });
         
@@ -380,7 +385,7 @@ int main(int argc, char* argv[])
     auto setup_dt = std::chrono::duration_cast<std::chrono::milliseconds>(setup_end - setup_start).count() * 1e-3f;
 
     std::printf("Setup done in %.2fs\n", setup_dt);
-    std::vector<mat3x4> PVs;
+    e_vec<mat3x4> PVs;
     for (size_t i = 0; i < frames.size(); ++i)
     {
         PVs.push_back(Ps[i] * frames[i].view_matrix);
