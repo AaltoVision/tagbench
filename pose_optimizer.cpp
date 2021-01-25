@@ -167,7 +167,7 @@ Eigen::Matrix4d optimize_pose(
         auto step_time = timing([&]{ dx = optimize_step(PVs, Ys, Z, t, q); });
         t += dx.block<3, 1>(0, 0);
         q += dx.block<4, 1>(3, 0);
-        qq = Eigen::Quaterniond{ q.x(), q.y(), q.z(), q.w() };
+        qq = Eigen::Quaterniond{ q.w(), q.x(), q.y(), q.z() };
         qq.normalize();
         q = { qq.x(), qq.y(), qq.z(), qq.w(), };
 
@@ -183,7 +183,6 @@ Eigen::Matrix4d optimize_pose(
         std::printf("\t\t(step time: %.2fs)", step_time);
         std::cout << std::endl;
     }
-    // M = make_pose_matrix(quat2rmat(q), t);
     return M;
 }
 
