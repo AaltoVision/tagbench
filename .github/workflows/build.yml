@@ -12,9 +12,9 @@ jobs:
     - name: Generate build files with CMake
       run: mkdir -p build && cd build && cmake ..
     - name: Build input_data_preprocessor
-      run: cmake --build build --target input_data_preprocessor
+      run: time cmake --build build --target input_data_preprocessor
     - name: Build tagbench
-      run: cmake --build build --target tagbench
+      run: time cmake --build build --target tagbench
 
   build_windows:
     runs-on: windows-latest
@@ -25,6 +25,8 @@ jobs:
     - name: Generate build files with CMake
       run: mkdir -p build && cd build && cmake -DCMAKE_PREFIX_PATH="C:\tools\opencv\build\" ..
     - name: Build input_data_preprocessor
-      run: cmake --build build --target input_data_preprocessor
+      shell: bash
+      run: time cmake --build build --target input_data_preprocessor
     - name: Build tagbench
-      run: cmake --build build --target tagbench
+      shell: bash
+      run: time cmake --build build --target tagbench
