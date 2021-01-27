@@ -62,12 +62,22 @@ e_vec<mat2x4> project_corners(e_vec<mat3x4> const& PVs, mat4 const& M, mat4 cons
     return projected;
 }
 
-Eigen::Matrix4d make_pose_matrix(Eigen::Matrix3d const &R, Eigen::Vector3d const &t) {
-    Eigen::Matrix4d pose = Eigen::Matrix4d::Zero();
+mat4 make_pose_matrix(Eigen::Matrix3d const &R, Eigen::Vector3d const &t)
+{
+    mat4 pose = mat4::Zero();
     pose.block<3, 3>(0, 0) = R;
     pose.block<3, 1>(0, 3) = t;
     pose(3, 3) = 1;
     return pose;
+};
+
+mat4 make_view_matrix(Eigen::Matrix3d const& R, Eigen::Vector3d const& t)
+{
+    mat4 V = Eigen::Matrix4d::Zero();
+    V.block<3, 3>(0, 0) = R;
+    V.block<3, 1>(0, 3) = -R * t;
+    V(3, 3) = 1;
+    return V;
 };
 
 Eigen::Vector<double, 7> optimize_step(
@@ -86,26 +96,25 @@ Eigen::Vector<double, 7> optimize_step(
     {
         Eigen::Matrix<double, 3, 4> PV = PVs[j];
 
-        // TODO: simplify, recompute stuff much less
+        // Compute translation and orientation derivatives
+        Eigen::Matrix4d dMdXi[7];
+        // t1, t2, t3
+        for (size_t i = 0; i < 3; ++i)
+        {
+            dMdXi[i] = Eigen::Matrix4d::Zero();
+            dMdXi[i](i, 3) = 1;
+        }
+        // q1, q2, q3, q4
+        Eigen::Matrix3d dRdq[4];
+        quat2rmat_d(q, dRdq);
+        for (size_t i = 0; i < 4; ++i)
+        {
+            dMdXi[3 + i] = Eigen::Matrix4d::Zero();
+            dMdXi[3 + i].block<3, 3>(0, 0) = dRdq[i];
+        }
+
         for (size_t k = 0; k < 4; ++k)
         {
-            // Compute translation and orientation derivatives
-            Eigen::Matrix4d dMdXi[7];
-            // t1, t2, t3
-            for (size_t i = 0; i < 3; ++i)
-            {
-                dMdXi[i] = Eigen::Matrix4d::Zero();
-                dMdXi[i](i, 3) = 1;
-            }
-            // q1, q2, q3, q4
-            Eigen::Matrix3d dRdq[4];
-            quat2rmat_d(q, dRdq);
-            for (size_t i = 0; i < 4; ++i)
-            {
-                dMdXi[3 + i] = Eigen::Matrix4d::Zero();
-                dMdXi[3 + i].block<3, 3>(0, 0) = dRdq[i];
-            }
-
             // Projection of z_k with current M
             Eigen::Vector3d xyw = PV * M * Z.col(k);
 
@@ -113,6 +122,7 @@ Eigen::Vector<double, 7> optimize_step(
             if (xyw(2) == 0)
             {
                 // TODO
+                throw;
                 break;
             }
             double w2 = xyw(2) * xyw(2);
@@ -156,9 +166,7 @@ Eigen::Matrix4d optimize_pose(
     Eigen::Matrix4d M = M0;
     Eigen::Vector3d t = M.block<3, 1>(0, 3);
     Eigen::Quaterniond qq(Eigen::AngleAxisd(M.block<3, 3>(0, 0)));
-
-    // TODO: check if quat2rmat and quat2rmat_d expect q to be wxyz or xyzw
-    Eigen::Vector4d q = { qq.x(), qq.y(), qq.z(), qq.w(), };
+    Eigen::Vector4d q = { qq.w(), qq.x(), qq.y(), qq.z(), };
 
     // TODO: actual threshold etc.
     for (size_t step = 0; step < 10; ++step)
@@ -167,9 +175,9 @@ Eigen::Matrix4d optimize_pose(
         auto step_time = timing([&]{ dx = optimize_step(PVs, Ys, Z, t, q); });
         t += dx.block<3, 1>(0, 0);
         q += dx.block<4, 1>(3, 0);
-        qq = Eigen::Quaterniond{ q.w(), q.x(), q.y(), q.z() };
+        qq = Eigen::Quaterniond{ q.x(), q.y(), q.z(), q.w() };
         qq.normalize();
-        q = { qq.x(), qq.y(), qq.z(), qq.w(), };
+        q = { qq.w(), qq.x(), qq.y(), qq.z(), };
 
         M = make_pose_matrix(quat2rmat(q), t);
 

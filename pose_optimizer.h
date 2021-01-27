@@ -30,6 +30,10 @@ static auto timing = [](auto const& f) {
     return dt;
 };
 
+mat4 make_pose_matrix(Eigen::Matrix3d const &R, Eigen::Vector3d const &t);
+
+mat4 make_view_matrix(Eigen::Matrix3d const& R, Eigen::Vector3d const& t);
+
 Eigen::Matrix3d quat2rmat(const Eigen::Vector4d& q);
 
 // Derivatives of the rotation matrix w.r.t. the quaternion of the quat2rmat() function.
