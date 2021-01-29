@@ -89,7 +89,7 @@ void parse_camera_extrinsics(json const& camera_extrinsics, Eigen::Matrix4d& vie
 
     view_matrix = Eigen::Matrix4d::Zero();
     view_matrix.block<3, 3>(0, 0) = R;
-    view_matrix.block<3, 1>(0, 3) = -R.transpose() * p;
+    view_matrix.block<3, 1>(0, 3) = -R * p; // Restore original p, which was recorded as -R.t()*p
     view_matrix(3, 3) = 1;
 }
 
