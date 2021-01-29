@@ -7,7 +7,10 @@
 
 using mat2x4 = Eigen::Matrix<double, 2, 4>;
 using mat3x4 = Eigen::Matrix<double, 3, 4>;
+using mat3 = Eigen::Matrix3d;
 using mat4 = Eigen::Matrix4d;
+using vec3 = Eigen::Vector3d;
+using vec4 = Eigen::Vector4d;
 
 // Fixed-size Eigen types' allocation must be aligned
 template<typename T>

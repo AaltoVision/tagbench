@@ -4,7 +4,6 @@
 - 'tagbench' target is the main application
 - 'input_data_preprocessor' helper program turns recorded video & VIO data into input for the tagbench program
     - Currently outputs only video frames and VIO poses with matching timestamps for testing, but might be different later
-- Currently supports just Windows, but will support Linux soon
 - Currently using Windows port of apriltags library, will change to Linux supporting one later that also has proper license information
 
 ## Usage

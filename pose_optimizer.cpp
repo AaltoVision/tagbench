@@ -57,7 +57,6 @@ e_vec<mat2x4> project_corners(e_vec<mat3x4> const& PVs, mat4 const& M, mat4 cons
                 proj_h(1) / proj_h(2),
             };
         }
-        throw_if_nan_or_inf(projected[i]);
     }
     return projected;
 }
@@ -69,16 +68,16 @@ mat4 make_pose_matrix(Eigen::Matrix3d const &R, Eigen::Vector3d const &t)
     pose.block<3, 1>(0, 3) = t;
     pose(3, 3) = 1;
     return pose;
-};
+}
 
 mat4 make_view_matrix(Eigen::Matrix3d const& R, Eigen::Vector3d const& t)
 {
     mat4 V = Eigen::Matrix4d::Zero();
-    V.block<3, 3>(0, 0) = R;
-    V.block<3, 1>(0, 3) = -R * t;
+    V.block<3, 3>(0, 0) = R.transpose();
+    V.block<3, 1>(0, 3) = -R.transpose() * t;
     V(3, 3) = 1;
     return V;
-};
+}
 
 Eigen::Vector<double, 7> optimize_step(
     e_vec<mat3x4> const& PVs,
@@ -154,7 +153,7 @@ Eigen::Vector<double, 7> optimize_step(
     Eigen::Vector<double, 7> dx = A.colPivHouseholderQr().solve(b);
     throw_if_nan_or_inf(dx);
     return dx;
-};
+}
 
 Eigen::Matrix4d optimize_pose(
     e_vec<mat3x4> const& PVs,
@@ -169,7 +168,7 @@ Eigen::Matrix4d optimize_pose(
     Eigen::Vector4d q = { qq.w(), qq.x(), qq.y(), qq.z(), };
 
     // TODO: actual threshold etc.
-    for (size_t step = 0; step < 10; ++step)
+    for (size_t step = 0; step < 100; ++step)
     {
         Eigen::Vector<double, 7> dx;
         auto step_time = timing([&]{ dx = optimize_step(PVs, Ys, Z, t, q); });
@@ -180,11 +179,7 @@ Eigen::Matrix4d optimize_pose(
         q = { qq.w(), qq.x(), qq.y(), qq.z(), };
 
         M = make_pose_matrix(quat2rmat(q), t);
-
         throw_if_nan_or_inf(M);
-        throw_if_nan_or_inf(PVs[0]);
-        throw_if_nan_or_inf(Z);
-        throw_if_nan_or_inf(Ys[0]);
 
         std::cout << "Step " << step << ": |dx| = " << dx.norm();
         std::printf("\t\tE(M) = %.6e", calculate_mse(project_corners(PVs, M, Z), Ys));
