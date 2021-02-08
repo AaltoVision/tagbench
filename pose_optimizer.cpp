@@ -118,11 +118,11 @@ Eigen::Vector<double, 7> optimize_step(
             Eigen::Vector3d xyw = PV * M * Z.col(k);
 
             // Jg
-            if (xyw(2) == 0)
+            // NOTE: xyw(2) is '-Z'. Z should be negative to be in front of camera, so -Z should be positive
+            if (xyw(2) < 0)
             {
-                // TODO
+                // TODO: possibly penalize projecting points behind camera in a meaningful way instead of giving up
                 throw;
-                break;
             }
             double w2 = xyw(2) * xyw(2);
             Eigen::Matrix<double, 2, 3> Jg = Eigen::Matrix<double, 2, 3>{
@@ -168,6 +168,7 @@ Eigen::Matrix4d optimize_pose(
     Eigen::Vector4d q = { qq.w(), qq.x(), qq.y(), qq.z(), };
 
     // TODO: actual threshold etc.
+    std::printf("Initial error: \t\t\t\tE(M0) = %.6e\n", calculate_mse(project_corners(PVs, M, Z), Ys));
     for (size_t step = 0; step < 100; ++step)
     {
         Eigen::Vector<double, 7> dx;

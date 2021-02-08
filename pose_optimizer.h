@@ -18,10 +18,9 @@ using e_vec = std::vector<T, Eigen::aligned_allocator<T>>;
 
 static auto throw_if_nan_or_inf = [](auto const& M)
 {
-    // if (M.hasNaN() || !std::isfinite(M))
-    if (M.hasNaN() || !( (M - M).array() == (M - M).array()).all())
+    if (M.hasNaN() || M.array().isInf().any())
     {
-        throw std::range_error("NaN encountered");
+        throw std::range_error("NaN or Inf encountered");
     }
 };
 

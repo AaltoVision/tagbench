@@ -47,25 +47,37 @@ static auto view_images = [](auto& get_image, int size)
         cv::imshow("projection", get_image(i));
         int key = cv::waitKey() & 0xFF;
         if (key == 27) { break; } // Esc to close
-        if (key == 'p') { i--; i = std::max(0, i); }
+        if (key == 'r') { i = 0; }
+        else if (key == 'p') { i--; i = std::max(0, i); }
         else { i++; i = std::min(size - 1, i); };
     }
 };
 
+// Mainly for debugging; change view matrices Vs s.t. they are relative to V
+void relate_views_to(e_vec<mat4>& Vs, mat4 const& V_inv)
+{
+    for (auto& V : Vs)
+    {
+        V = V * V_inv ;
+    };
+}
+
 void parse_camera_intrinsics(json const &camera_intrinsics,
-                             Eigen::Matrix4d& intrinsic_matrix)
+                             mat3x4& intrinsic_matrix)
 {
     auto const focal_length_x = camera_intrinsics["focalLengthX"].get<float>();
     auto const focal_length_y = camera_intrinsics["focalLengthY"].get<float>();
     auto const principal_point_x = camera_intrinsics["principalPointX"].get<float>();
     auto const principal_point_y = camera_intrinsics["principalPointY"].get<float>();
 
-    intrinsic_matrix = Eigen::Matrix4d::Zero();
+    // NOTE: opengl view matrix has camera looking at z-; this intrinsic matrix makes projections stay on the correct side instead of flipping on screen
+    // NOTE: after division by w, Z will be 1 instead of -1, but is discarded anyway so it does not matter
+    intrinsic_matrix = mat3x4::Zero();
     intrinsic_matrix(0, 0) = focal_length_x;
     intrinsic_matrix(1, 1) = focal_length_y;
-    intrinsic_matrix(0, 2) = principal_point_x;
-    intrinsic_matrix(1, 2) = principal_point_y;
-    intrinsic_matrix(2, 2) = 1.0f;
+    intrinsic_matrix(0, 2) = -principal_point_x;
+    intrinsic_matrix(1, 2) = -principal_point_y;
+    intrinsic_matrix(2, 2) = -1.0f;
 }
 
 void parse_camera_extrinsics(json const& camera_extrinsics, Eigen::Matrix4d& view_matrix, Eigen::Vector3d& p)
@@ -87,7 +99,7 @@ void parse_camera_extrinsics(json const& camera_extrinsics, Eigen::Matrix4d& vie
     double det = R.determinant();
     if (std::abs(det - 1.0) > 0.01) throw;
 
-    view_matrix = Eigen::Matrix4d::Zero();
+    view_matrix = mat4::Zero();
     view_matrix.block<3, 3>(0, 0) = R;
     view_matrix.block<3, 1>(0, 3) = -R * p; // Restore original p, which was recorded as -R.t()*p
     view_matrix(3, 3) = 1;
@@ -283,10 +295,26 @@ void create_synthetic_dataset(mat4 const& Z,
     Ys = project_corners(PVs, M, Z);
 }
 
-void test_synthetic_case(mat3x4 const& P, mat4 const& Z, bool show_visualization)
+void test_synthetic_case(bool show_visualization)
 {
     e_vec<mat4> Vs;
     e_vec<mat2x4> Ys;
+
+    double s = 0.198;
+    mat4 Z;
+    Z.col(0) = Eigen::Vector4d{ -s/2, -s/2, 0, 1, }; // bottom-left
+    Z.col(1) = Eigen::Vector4d{ s/2, -s/2, 0, 1, }; // bottom-right
+    Z.col(2) = Eigen::Vector4d{ s/2, s/2, 0, 1, }; // top-right
+    Z.col(3) = Eigen::Vector4d{ -s/2, s/2, 0, 1, }; // top-left
+
+    double w = 1920, h = 1080;
+    double fx = 1445.514404296875, fy = 1451.21630859375;
+    double px = 950.2744140625, py = 538.8798217773438;
+    w /= 2; h /= 2; fx /= 2; fy /= 2;  px /= 2; py /= 2;
+    mat3x4 P;
+    P.row(0) = vec4{ fx, 0, -px, 0 };
+    P.row(1) = vec4{ 0, fy, -py, 0 };
+    P.row(2) = vec4{ 0, 0, -1, 0 };
 
     // quad at y=1, with 45' rotation around Y-axis
     mat4 synthetic_M = mat4::Identity();
@@ -317,7 +345,7 @@ void test_synthetic_case(mat3x4 const& P, mat4 const& Z, bool show_visualization
     auto projections = project_corners(PVs, M, Z);
     auto images = std::vector<cv::Mat>(PVs.size());
     for (auto& image : images) {
-        image = cv::Mat(cv::Size2d{ 2*P(0, 2), 2*P(1, 2) }, CV_8UC3, cv::Scalar{ 200, 200, 200 });
+        image = cv::Mat(cv::Size2d{ w, h }, CV_8UC3, cv::Scalar{ 200, 200, 200 });
         auto l = std::stringstream{ label.str() };
         put_text_lines(image, l, 100);
     }
@@ -333,6 +361,21 @@ void test_synthetic_case(mat3x4 const& P, mat4 const& Z, bool show_visualization
     }
 }
 
+void flip_y(mat2x4& corner_points, double image_height)
+{
+    corner_points(1, 0) = image_height - corner_points(1, 0);
+    corner_points(1, 1) = image_height - corner_points(1, 1);
+    corner_points(1, 2) = image_height - corner_points(1, 2);
+    corner_points(1, 3) = image_height - corner_points(1, 3);
+}
+
+e_vec<mat2x4> with_flipped_ys(e_vec<mat2x4> const& corner_points, double image_height)
+{
+    auto flipped = corner_points;
+    for (auto& p : flipped) { flip_y(p, image_height); }
+    return flipped;
+}
+
 // Input in jsonl format (file or stdin) (file not supported currently):
 //
 //      {
@@ -346,18 +389,21 @@ void test_synthetic_case(mat3x4 const& P, mat4 const& Z, bool show_visualization
 int main(int argc, char* argv[])
 {
     auto settings = json{};
+    settings["tag_side_length"] = 0.198;
     settings["synthetic_optimize"] = false;
     settings["synthetic_vis"] = false;
     settings["real_optimize"] = true;
     settings["real_vis"] = true;
-    settings["tag_side_length"] = 0.198;
+    settings["preload_images"] = false;
+    settings["cache_images"] = false;
 
     std::istream& input = std::cin;
 
     auto Ps = e_vec<mat3x4>{};
     auto Vs = e_vec<mat4>{};
     auto Ts = e_vec<Eigen::Vector3d>{};
-    auto Ys = e_vec<mat2x4>{};
+    auto cv_Ys = e_vec<mat2x4>{}; // original y-coordinates (grow down) (opencv style)
+    auto Ys = e_vec<mat2x4>{}; // flipped y-coordinates (grow up) (opengl style)
     auto frame_paths = std::vector<std::string>{};
 
     std::string line;
@@ -375,7 +421,7 @@ int main(int argc, char* argv[])
 
             ++total_input_frames;
 
-            mat4 P;
+            mat3x4 P;
             parse_camera_intrinsics(j["cameraIntrinsics"], P);
             // We will scale images to half size, so have to adjust these focal lengths and principal point as well
             P(0, 0) /= 2;
@@ -416,22 +462,28 @@ int main(int argc, char* argv[])
             if (corners.size() == 1)
             {
                 Vs.push_back(V);
-                Ps.push_back(P.block<3, 4>(0, 0).cast<double>());
+                Ps.push_back(P);
                 Ts.push_back(t);
                 auto const& d = corners[0];
-                mat2x4 Y;
-                Y << d[0][0], d[1][0], d[2][0], d[3][0],
+                mat2x4 cv_Y;
+                cv_Y << d[0][0], d[1][0], d[2][0], d[3][0],
                     d[0][1], d[1][1], d[2][1], d[3][1];
-                Ys.push_back(Y);
+                cv_Ys.push_back(cv_Y);
+
+                // Flip y-coordinates
+                mat2x4 flipped_Y = cv_Y;
+                // TODO actual height
+                double image_height = 2*std::abs(P(1, 2));
+                // double image_height = 540;
+                flip_y(flipped_Y, image_height);
+                Ys.push_back(flipped_Y);
+
                 frame_paths.push_back(j["framePath"].get<std::string>());
             }
         }
     });
     std::printf("Parsed input in %.2fs\n", input_parse_time);
 
-    // TODO: [0, s] or [-s/2, s/2] ?
-    // Probably does not affect solution, as long as we are consistent
-    // Tag on the screen is 19.8cm (in arcore-7-1-single-2 data, where tag is shown on screen)
     double s = settings["tag_side_length"].get<double>();
     mat4 Z;
     Z.col(0) = Eigen::Vector4d{ -s/2, -s/2, 0, 1, }; // bottom-left
@@ -442,32 +494,13 @@ int main(int argc, char* argv[])
     // Test fitting synthetic data
     if (settings["synthetic_optimize"].get<bool>())
     {
-        test_synthetic_case(Ps[0], Z, settings["synthetic_vis"].get<bool>());
+        test_synthetic_case(settings["synthetic_vis"].get<bool>());
     }
 
     if (!settings["real_optimize"]) return 0;
 
-    // // Turn V0 into identity, and other Vs relative to that
-    // for (size_t i = 0; i < Vs.size(); ++i)
-    // {
-    //     mat4 inv = Vs[0].inverse();
-    //     mat4 V = Vs[i];
-    //     Vs[i] = inv * V;
-    // }
-
-    auto Cs = solve_homographies(Ps, Ys, Z);
-
-    // // Debugging: use Cs instead of Vs, and add a random transformation, which optimizer should find
-    // Vs = Cs;
-    // mat4 hidden_M = mat4::Identity();
-    // vec3 T = vec3::Random() * 2.;
-    // mat3 R = Eigen::AngleAxisd(M_PI/6-0.1, vec3::UnitY()).toRotationMatrix();
-    // hidden_M.block<3, 3>(0, 0) = R;
-    // hidden_M.col(3).head(3) = R*T;
-    // for (size_t i = 0; i < Vs.size(); ++i)
-    // {
-    //     Vs[i] = (Vs[i] * hidden_M).eval();
-    // }
+    mat4 v0inv = Vs[0].inverse();
+    relate_views_to(Vs, v0inv);
 
     e_vec<mat3x4> PVs;
     for (size_t i = 0; i < Vs.size(); ++i)
@@ -475,50 +508,74 @@ int main(int argc, char* argv[])
         PVs.push_back(Ps[i] * Vs[i]);
     }
 
-    // mat4 M0 = mat4::Identity();
-    mat4 M0 = Vs[0].inverse() * Cs[0];
+    // Initial guess M0 that puts corners on the correct side of camera (camera looks at Z- in view space)
+    mat4 M0 = mat4::Identity();
+    M0(2, 3) = -1;
+    M0 = (Vs[0].inverse() * M0).eval();
+
+    // TODO use opencv homography result for initial guess (needs coordinate system switching):
+    // auto Cs = solve_homographies(Ps, cv_Ys, Z);
+    // mat4 cv_to_ogl = vec4{ 1, -1, -1, 1 }.asDiagonal();
 
     mat4 optimized_M;
     auto optimization_time = timing([&]{
         optimized_M = optimize_pose(PVs, Ys, Z, M0);
     });
 
-    if (optimized_M.block<3, 3>(0, 0).determinant() < 0.99) throw;
-    std::printf("Total optimization time: %.2fs\n", optimization_time);
-
-    auto optimized_M_projected_points = project_corners(PVs, optimized_M, Z);
-    auto corner_ds = corner_pixel_distances(optimized_M_projected_points, Ys);
+    auto const M_points = project_corners(PVs, optimized_M, Z);
+    auto corner_ds = corner_pixel_distances(M_points, Ys);
     auto avg_ds = corner_ds.rowwise().mean();
 
+    auto loaded_images = std::map<int, cv::Mat>{};
     auto get_scaled_frame = [&](int i) {
-        auto image = cv::Mat{};
-        auto temp_image = cv::imread(frame_paths[i]);
-        cv::resize(temp_image, image, temp_image.size() / 2);
-        return image;
+        auto it = loaded_images.find(i);
+        if (it == loaded_images.end())
+        {
+            auto image = cv::Mat{};
+            auto temp_image = cv::imread(frame_paths[i]);
+            cv::resize(temp_image, image, temp_image.size() / 2);
+            loaded_images[i] = image;
+            return image.clone();
+        }
+        else
+        {
+            return it->second.clone();
+        }
     };
 
-    auto scaled_frame_with_distances = [&](int i)
+    if (settings["preload_images"].get<bool>())
+    {
+        for (size_t i = 0; i < frame_paths.size(); ++i)
+        {
+            get_scaled_frame((int)i);
+        }
+    }
+
+    auto scaled_frame_with_info = [&](int i)
     {
         auto image = get_scaled_frame(i);
         auto label = std::stringstream();
         label.precision(3);
-        label << "Average corner distance: " << avg_ds(i) << "\n";
-        label << "P[i]:\n" << Ps[i] << "\n";
-        label << "Image size: " << image.size() << "\n\n";
-        label << "Optimized M:\n" << optimized_M << std::endl;
+        label << "Average corner distance: " << avg_ds(i) << "px\n";
+        label << "Frame: " << frame_paths[i] << "\n";
         put_text_lines(image, label, 100);
         return image;
     };
 
     if (settings["real_vis"].get<bool>())
     {
-        visualize_projections(scaled_frame_with_distances, Vs.size(), Ys, optimized_M_projected_points);
+        // TODO actual height
+        // auto image_height = 540;
+        auto image_height = 2*std::abs(Ps[0](1,2));
+        auto cv_M_points = with_flipped_ys(M_points, image_height);
+        visualize_projections(scaled_frame_with_info, Vs.size(), cv_Ys, cv_M_points);
     }
 
     // Final score
-    auto mse = calculate_mse(optimized_M_projected_points, Ys);
+    auto mse = calculate_mse(M_points, Ys);
     std::printf("Total input frames: %zu\n", total_input_frames);
     std::printf("Frames considered (single marker detected): %zu\n", Vs.size());
     std::printf("E(M) = %.2f (Error for optimized M)\n", mse);
+    std::printf("E(M) per frame = %.2f\n", mse / frame_paths.size());
 
 }
