@@ -7,7 +7,7 @@
 #define NOMINMAX
 #endif
 
-#include <json.hpp>
+#include <nlohmann/json.hpp>
 #include <Eigen/Dense>
 #include <TagDetector.h>
 #include <DebugImage.h>
