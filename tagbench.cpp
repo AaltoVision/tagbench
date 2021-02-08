@@ -32,6 +32,7 @@ using mat2x4 = Eigen::Matrix<double, 2, 4>;
 using mat3x4 = Eigen::Matrix<double, 3, 4>;
 using mat3 = Eigen::Matrix3d;
 using mat4 = Eigen::Matrix4d;
+using vec2 = Eigen::Vector2d;
 using vec3 = Eigen::Vector3d;
 using vec4 = Eigen::Vector4d;
 
@@ -80,7 +81,7 @@ void parse_camera_intrinsics(json const &camera_intrinsics,
     intrinsic_matrix(2, 2) = -1.0f;
 }
 
-void parse_camera_extrinsics(json const& camera_extrinsics, Eigen::Matrix4d& view_matrix, Eigen::Vector3d& p)
+void parse_camera_extrinsics(json const& camera_extrinsics, mat4& view_matrix, vec3& p)
 {
     auto const& json_position = camera_extrinsics["position"];
     p = {
@@ -95,7 +96,7 @@ void parse_camera_extrinsics(json const& camera_extrinsics, Eigen::Matrix4d& vie
         json_orientation["y"].get<double>(),
         json_orientation["z"].get<double>(),
     };
-    Eigen::Matrix3d R = q.toRotationMatrix();
+    mat3 R = q.toRotationMatrix();
     double det = R.determinant();
     if (std::abs(det - 1.0) > 0.01) throw;
 
@@ -204,34 +205,34 @@ void create_synthetic_dataset(mat4 const& Z,
                               e_vec<mat2x4>& Ys,
                               mat4 const& M)
 {
-    auto const look_z_minus = Eigen::Matrix3d(Eigen::AngleAxisd(M_PI, Eigen::Vector3d::UnitY()));
+    auto const look_z_minus = mat3(Eigen::AngleAxisd(M_PI, vec3::UnitY()));
     auto const angles = Eigen::VectorXd(Eigen::ArrayXd::LinSpaced(32, -M_PI/6, M_PI/6));
 
     // Rotate 30 degrees right-left around Y axis
     // for (size_t i = 0; i < 32; ++i)
     for (auto angle : angles)
     {
-        Eigen::Vector3d t = Eigen::Vector3d{ 0, 0, 4 };
-        Eigen::Matrix3d R = Eigen::AngleAxisd(angle, Eigen::Vector3d::UnitY()).toRotationMatrix() * look_z_minus;
+        vec3 t = vec3{ 0, 0, 4 };
+        mat3 R = Eigen::AngleAxisd(angle, vec3::UnitY()).toRotationMatrix() * look_z_minus;
         Vs.push_back(make_view_matrix(R, t));
         // Just a sanity check; check origin is not behind camera (same as V(2,3)<0)
-        if ((Vs.back() * Eigen::Vector3d::Zero().homogeneous()).z() < 0) throw;
+        if ((Vs.back() * vec3::Zero().homogeneous()).z() < 0) throw;
     }
     // // Rotate 30 degrees up-down
     // for (size_t i = 0; i < 32; ++i)
     // {
-    //     Eigen::Vector3d t = Eigen::Vector3d{ 0, 0, 4 };
-    //     Eigen::Matrix3d R = Eigen::AngleAxisd(angles[i], Eigen::Vector3d::UnitX()).toRotationMatrix() * look_z_minus;
+    //     vec3 t = vec3{ 0, 0, 4 };
+    //     mat3 R = Eigen::AngleAxisd(angles[i], vec3::UnitX()).toRotationMatrix() * look_z_minus;
     //     Vs.push_back(make_view_matrix(R, t));
-    //     if ((Vs.back() * Eigen::Vector3d::Zero().homogeneous()).z() < 0) throw;
+    //     if ((Vs.back() * vec3::Zero().homogeneous()).z() < 0) throw;
     // }
     // // Rotate -30 to 30 degrees around Z- (rolling left ro right)
     // for (size_t i = 0; i < 32; ++i)
     // {
-    //     Eigen::Vector3d t = Eigen::Vector3d{ 0, 0, 4 };
-    //     Eigen::Matrix3d R = Eigen::AngleAxisd(angles[i], Eigen::Vector3d::UnitZ()).toRotationMatrix() * look_z_minus;
+    //     vec3 t = vec3{ 0, 0, 4 };
+    //     mat3 R = Eigen::AngleAxisd(angles[i], vec3::UnitZ()).toRotationMatrix() * look_z_minus;
     //     Vs.push_back(make_view_matrix(R, t));
-    //     if ((Vs.back() * Eigen::Vector3d::Zero().homogeneous()).z() < 0) throw;
+    //     if ((Vs.back() * vec3::Zero().homogeneous()).z() < 0) throw;
     // }
 
     // Translate in a circle around Z axis, looking towards Z-
@@ -240,37 +241,37 @@ void create_synthetic_dataset(mat4 const& Z,
         double t_magnitude = 0.5; // TODO: relate to pixels (through s and resolution)
         for (size_t i = 0; i < 32; ++i)
         {
-            Eigen::Vector3d t = Eigen::AngleAxisd(i * d_angle, -Eigen::Vector3d::UnitZ()) * Eigen::Vector3d::UnitX() * t_magnitude;
+            vec3 t = Eigen::AngleAxisd(i * d_angle, -vec3::UnitZ()) * vec3::UnitX() * t_magnitude;
             // t(2) = -4;
             t(2) = 4;
-            // Eigen::Matrix3d R = Eigen::Matrix3d::Identity();
+            // mat3 R = mat3::Identity();
             // R(2, 2) = -1; // Look at Z-
-            Eigen::Matrix3d R = look_z_minus.transpose();
+            mat3 R = look_z_minus.transpose();
             Vs.push_back(make_view_matrix(R, t));
         }
-        if ((Vs.back() * Eigen::Vector3d::Zero().homogeneous()).z() < 0) throw;
+        if ((Vs.back() * vec3::Zero().homogeneous()).z() < 0) throw;
     }
 
     // Zoom out
     for (size_t i = 0; i < 32; ++i)
     {
         // Looking at Z-
-        Eigen::Matrix3d R = Eigen::Vector3d{ 1, 1, -1 }.asDiagonal();
+        mat3 R = vec3{ 1, 1, -1 }.asDiagonal();
         // Moving towards Z+
-        Eigen::Vector3d t = Eigen::Vector3d::UnitZ() * ((int)i + 1);
+        vec3 t = vec3::UnitZ() * ((int)i + 1);
         Vs.push_back(make_view_matrix(R, t));
-        if ((Vs.back() * Eigen::Vector3d::Zero().homogeneous()).z() < 0) throw;
+        if ((Vs.back() * vec3::Zero().homogeneous()).z() < 0) throw;
     }
 
     // Zoom out, looking left
     for (size_t i = 0; i < 32; ++i)
     {
         // Looking at 30' left from Z-
-        Eigen::Matrix3d R = Eigen::AngleAxisd(M_PI / 6, Eigen::Vector3d::UnitY()) * look_z_minus;
+        mat3 R = Eigen::AngleAxisd(M_PI / 6, vec3::UnitY()) * look_z_minus;
         // Moving towards Z+
-        Eigen::Vector3d t = Eigen::Vector3d::UnitZ() * ((int)i + 1);
+        vec3 t = vec3::UnitZ() * ((int)i + 1);
         Vs.push_back(make_view_matrix(R, t));
-        if ((Vs.back() * Eigen::Vector3d::Zero().homogeneous()).z() < 0) throw;
+        if ((Vs.back() * vec3::Zero().homogeneous()).z() < 0) throw;
     }
 
     // Rotate 30 degrees left-right around Y axis, while moving in circle around Z axis
@@ -280,11 +281,11 @@ void create_synthetic_dataset(mat4 const& Z,
         Eigen::VectorXd angles = Eigen::ArrayXd::LinSpaced(32, -M_PI / 12, M_PI / 12);
         for (size_t i = 0; i < 32; ++i)
         {
-            Eigen::Vector3d t = Eigen::AngleAxisd(i * d_angle, -Eigen::Vector3d::UnitZ()) * Eigen::Vector3d::UnitX() * t_magnitude;
+            vec3 t = Eigen::AngleAxisd(i * d_angle, -vec3::UnitZ()) * vec3::UnitX() * t_magnitude;
             t(2) = -(((int)i) * 1.2 + 1);
-            Eigen::Matrix3d R = Eigen::AngleAxisd(angles[i], Eigen::Vector3d::UnitY()).toRotationMatrix();
+            mat3 R = Eigen::AngleAxisd(angles[i], vec3::UnitY()).toRotationMatrix();
             Vs.push_back(make_view_matrix(R, t));
-            if ((Vs.back() * Eigen::Vector3d::Zero().homogeneous()).z() < 0) throw;
+            if ((Vs.back() * vec3::Zero().homogeneous()).z() < 0) throw;
         }
     }
 
@@ -302,10 +303,10 @@ void test_synthetic_case(bool show_visualization)
 
     double s = 0.198;
     mat4 Z;
-    Z.col(0) = Eigen::Vector4d{ -s/2, -s/2, 0, 1, }; // bottom-left
-    Z.col(1) = Eigen::Vector4d{ s/2, -s/2, 0, 1, }; // bottom-right
-    Z.col(2) = Eigen::Vector4d{ s/2, s/2, 0, 1, }; // top-right
-    Z.col(3) = Eigen::Vector4d{ -s/2, s/2, 0, 1, }; // top-left
+    Z.col(0) = vec4{ -s/2, -s/2, 0, 1, }; // bottom-left
+    Z.col(1) = vec4{ s/2, -s/2, 0, 1, }; // bottom-right
+    Z.col(2) = vec4{ s/2, s/2, 0, 1, }; // top-right
+    Z.col(3) = vec4{ -s/2, s/2, 0, 1, }; // top-left
 
     double w = 1920, h = 1080;
     double fx = 1445.514404296875, fy = 1451.21630859375;
@@ -318,9 +319,9 @@ void test_synthetic_case(bool show_visualization)
 
     // quad at y=1, with 45' rotation around Y-axis
     mat4 synthetic_M = mat4::Identity();
-    synthetic_M.col(0) = Eigen::Vector4d{ 1, 0, -1, 0 }.normalized();
-    synthetic_M.col(2) = Eigen::Vector4d{ 1, 0, 1, 0 }.normalized();
-    synthetic_M.col(3) = Eigen::Vector4d{ 0, 1, 0, 1 };
+    synthetic_M.col(0) = vec4{ 1, 0, -1, 0 }.normalized();
+    synthetic_M.col(2) = vec4{ 1, 0, 1, 0 }.normalized();
+    synthetic_M.col(3) = vec4{ 0, 1, 0, 1 };
     create_synthetic_dataset(Z, P, Vs, Ys, synthetic_M);
 
     auto PVs = e_vec<mat3x4>(Vs.size());
@@ -401,7 +402,7 @@ int main(int argc, char* argv[])
 
     auto Ps = e_vec<mat3x4>{};
     auto Vs = e_vec<mat4>{};
-    auto Ts = e_vec<Eigen::Vector3d>{};
+    auto Ts = e_vec<vec3>{};
     auto cv_Ys = e_vec<mat2x4>{}; // original y-coordinates (grow down) (opencv style)
     auto Ys = e_vec<mat2x4>{}; // flipped y-coordinates (grow up) (opengl style)
     auto frame_paths = std::vector<std::string>{};
@@ -429,7 +430,7 @@ int main(int argc, char* argv[])
             P(0, 2) /= 2;
             P(1, 2) /= 2;
             mat4 V;
-            Eigen::Vector3d t;
+            vec3 t;
             parse_camera_extrinsics(j["cameraExtrinsics"], V, t);
 
             using tag_corners = std::array<std::array<float, 2>, 4>;
@@ -486,10 +487,10 @@ int main(int argc, char* argv[])
 
     double s = settings["tag_side_length"].get<double>();
     mat4 Z;
-    Z.col(0) = Eigen::Vector4d{ -s/2, -s/2, 0, 1, }; // bottom-left
-    Z.col(1) = Eigen::Vector4d{ s/2, -s/2, 0, 1, }; // bottom-right
-    Z.col(2) = Eigen::Vector4d{ s/2, s/2, 0, 1, }; // top-right
-    Z.col(3) = Eigen::Vector4d{ -s/2, s/2, 0, 1, }; // top-left
+    Z.col(0) = vec4{ -s/2, -s/2, 0, 1, }; // bottom-left
+    Z.col(1) = vec4{ s/2, -s/2, 0, 1, }; // bottom-right
+    Z.col(2) = vec4{ s/2, s/2, 0, 1, }; // top-right
+    Z.col(3) = vec4{ -s/2, s/2, 0, 1, }; // top-left
 
     // Test fitting synthetic data
     if (settings["synthetic_optimize"].get<bool>())

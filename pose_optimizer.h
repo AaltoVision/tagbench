@@ -9,6 +9,7 @@ using mat2x4 = Eigen::Matrix<double, 2, 4>;
 using mat3x4 = Eigen::Matrix<double, 3, 4>;
 using mat3 = Eigen::Matrix3d;
 using mat4 = Eigen::Matrix4d;
+using vec2 = Eigen::Vector2d;
 using vec3 = Eigen::Vector3d;
 using vec4 = Eigen::Vector4d;
 
@@ -32,31 +33,31 @@ static auto timing = [](auto const& f) {
     return dt;
 };
 
-mat4 make_pose_matrix(Eigen::Matrix3d const &R, Eigen::Vector3d const &t);
+mat4 make_pose_matrix(mat3 const &R, vec3 const &t);
 
-mat4 make_view_matrix(Eigen::Matrix3d const& R, Eigen::Vector3d const& t);
+mat4 make_view_matrix(mat3 const& R, vec3 const& t);
 
-Eigen::Matrix3d quat2rmat(const Eigen::Vector4d& q);
+mat3 quat2rmat(const vec4& q);
 
 // Derivatives of the rotation matrix w.r.t. the quaternion of the quat2rmat() function.
-Eigen::Matrix3d quat2rmat_d(const Eigen::Vector4d& q, Eigen::Matrix3d(&dR)[4]);
+mat3 quat2rmat_d(const vec4& q, mat3(&dR)[4]);
 
 double calculate_mse(e_vec<mat2x4> const& p, e_vec<mat2x4> const& y);
 
 e_vec<mat2x4> project_corners(e_vec<mat3x4> const& PVs, mat4 const& M, mat4 const& Z);
 
-Eigen::Matrix4d make_pose_matrix(Eigen::Matrix3d const &R, Eigen::Vector3d const &t);
+mat4 make_pose_matrix(mat3 const &R, vec3 const &t);
 
 Eigen::Vector<double, 7> optimize_step(
     e_vec<mat3x4> const& PVs,
     e_vec<mat2x4> const& Ys,
-    Eigen::Matrix4d const& Z,
-    Eigen::Vector3d const& t,
-    Eigen::Vector4d const& q);
+    mat4 const& Z,
+    vec3 const& t,
+    vec4 const& q);
 
-Eigen::Matrix4d optimize_pose(
+mat4 optimize_pose(
     e_vec<mat3x4> const& PVs,
     e_vec<mat2x4> const& Ys,
-    Eigen::Matrix4d const& Z,
-    Eigen::Matrix4d const& M0
+    mat4 const& Z,
+    mat4 const& M0
     );
