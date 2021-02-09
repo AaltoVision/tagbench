@@ -6,7 +6,10 @@ jobs:
   build_ubuntu:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - name: Checkout repository and submodules
+      uses: actions/checkout@v2
+      with:
+        submodules: recursive
     - name: Install opencv-dev library from apt
       run: sudo apt update && sudo apt install libopencv-dev
     - name: Generate build files with CMake
@@ -19,7 +22,10 @@ jobs:
   build_windows:
     runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v2
+    - name: Checkout repository and submodules
+      uses: actions/checkout@v2
+      with:
+        submodules: recursive
     - name: Install opencv through Chocolatey
       run: choco install opencv
     - name: Generate build files with CMake
