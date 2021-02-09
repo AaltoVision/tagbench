@@ -37,7 +37,7 @@ int parse_frame_number_from_path(fs::path const& path)
 
 using tag_corners = std::array<std::array<float, 2>, 4>;
 
-std::vector<tag_corners> detect_marker_corners(cv::Mat& image)
+std::vector<tag_corners> detect_marker_corners(cv::Mat& image, cv::Point2d optical_center)
 {
     TagDetectorParams params;
     auto tag_family = TagFamily(std::string("Tag36h11"));
@@ -50,10 +50,9 @@ std::vector<tag_corners> detect_marker_corners(cv::Mat& image)
     cv::resize(image, temp_image, image.size() / 2);
     image = temp_image;
 
-    // cv::Point2d optical_center(principal_point_x, principal_point_y);
-    detector.process(image, cv::Point2i{image.size().width, image.size().height}, detections);
     auto dt = timing([&] {
-        detector.process(image, cv::Point2i{image.size().width, image.size().height}, detections);
+        // Image is resized to half size, so optical center must also be scaled
+        detector.process(image, optical_center / 2, detections);
     });
 
     std::vector<tag_corners> marker_corners;
@@ -188,7 +187,11 @@ int main(int argc, char* argv[])
             // TODO: j["frameTime"] perhaps
 
             auto frame = cv::imread(frame_path.string());
-            j["markers"] = detect_marker_corners(frame);
+            auto optical_center = cv::Point2d{
+                p["cameraIntrinsics"]["principalPointX"].get<double>(),
+                p["cameraIntrinsics"]["principalPointY"].get<double>(),
+            };
+            j["markers"] = detect_marker_corners(frame, optical_center);
 
             fprintf(out, "%s\n", j.dump().c_str());
         }
