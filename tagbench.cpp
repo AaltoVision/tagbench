@@ -59,7 +59,7 @@ void relate_views_to(e_vec<mat4>& Vs, mat4 const& V_inv)
 {
     for (auto& V : Vs)
     {
-        V = V * V_inv ;
+        V = V * V_inv;
     };
 }
 
@@ -175,9 +175,9 @@ e_vec<mat4> solve_homographies(e_vec<mat3x4> const& Ps, e_vec<mat2x4> const& Ys,
             cv::Point2d{ Ys[i](0, 3), Ys[i](1, 3) }, // top-left
         };
         cv::Matx33d K = {
-            Ps[i](0, 0), Ps[i](0, 1), Ps[i](0, 2),
-            Ps[i](1, 0), Ps[i](1, 1), Ps[i](1, 2),
-            Ps[i](2, 0), Ps[i](2, 1), Ps[i](2, 2),
+            Ps[i](0, 0), Ps[i](0, 1), -Ps[i](0, 2),
+            Ps[i](1, 0), Ps[i](1, 1), -Ps[i](1, 2),
+            Ps[i](2, 0), Ps[i](2, 1), -Ps[i](2, 2),
         };
         cv::Vec3d r;
         cv::Vec3d T;
@@ -364,10 +364,10 @@ void test_synthetic_case(bool show_visualization)
 
 void flip_y(mat2x4& corner_points, double image_height)
 {
-    corner_points(1, 0) = image_height - corner_points(1, 0);
-    corner_points(1, 1) = image_height - corner_points(1, 1);
-    corner_points(1, 2) = image_height - corner_points(1, 2);
-    corner_points(1, 3) = image_height - corner_points(1, 3);
+    corner_points(1, 0) = image_height - corner_points(1, 0) - 1;
+    corner_points(1, 1) = image_height - corner_points(1, 1) - 1;
+    corner_points(1, 2) = image_height - corner_points(1, 2) - 1;
+    corner_points(1, 3) = image_height - corner_points(1, 3) - 1;
 }
 
 e_vec<mat2x4> with_flipped_ys(e_vec<mat2x4> const& corner_points, double image_height)
@@ -395,8 +395,8 @@ int main(int argc, char* argv[])
     settings["synthetic_vis"] = false;
     settings["real_optimize"] = true;
     settings["real_vis"] = true;
-    settings["preload_images"] = false;
-    settings["cache_images"] = false;
+    settings["preload_images"] = true;
+    settings["cache_images"] = true;
 
     std::istream& input = std::cin;
 
@@ -474,8 +474,7 @@ int main(int argc, char* argv[])
                 // Flip y-coordinates
                 mat2x4 flipped_Y = cv_Y;
                 // TODO actual height
-                double image_height = 2*std::abs(P(1, 2));
-                // double image_height = 540;
+                double image_height = 540;
                 flip_y(flipped_Y, image_height);
                 Ys.push_back(flipped_Y);
 
@@ -500,9 +499,7 @@ int main(int argc, char* argv[])
 
     if (!settings["real_optimize"]) return 0;
 
-    mat4 v0inv = Vs[0].inverse();
-    relate_views_to(Vs, v0inv);
-
+    // relate_views_to(Vs, Vs[0].inverse());
     e_vec<mat3x4> PVs;
     for (size_t i = 0; i < Vs.size(); ++i)
     {
@@ -510,13 +507,16 @@ int main(int argc, char* argv[])
     }
 
     // Initial guess M0 that puts corners on the correct side of camera (camera looks at Z- in view space)
-    mat4 M0 = mat4::Identity();
-    M0(2, 3) = -1;
-    M0 = (Vs[0].inverse() * M0).eval();
+    // mat4 M0 = mat4::Identity();
+    // M0(2, 3) = -1;
+    // M0 = (Vs[0].inverse() * M0).eval();
 
-    // TODO use opencv homography result for initial guess (needs coordinate system switching):
-    // auto Cs = solve_homographies(Ps, cv_Ys, Z);
-    // mat4 cv_to_ogl = vec4{ 1, -1, -1, 1 }.asDiagonal();
+    // Solve homography from marker corners from first image to initialize M0
+    // Note: OpenGL and OpenCV have different coordinate systems, hence cv_to_ogl
+    auto Cs = solve_homographies(Ps, cv_Ys, Z);
+    mat4 cv_to_ogl = vec4{ 1, -1, -1, 1 }.asDiagonal();
+    mat4 C0 = cv_to_ogl * Cs[0];
+    mat4 M0 = (Vs[0].inverse() * C0);
 
     mat4 optimized_M;
     auto optimization_time = timing([&]{
@@ -527,16 +527,21 @@ int main(int argc, char* argv[])
     auto corner_ds = corner_pixel_distances(M_points, Ys);
     auto avg_ds = corner_ds.rowwise().mean();
 
+    auto load_scaled_frame = [&](int i)
+    {
+        auto image = cv::Mat{};
+        auto temp_image = cv::imread(frame_paths[i]);
+        cv::resize(temp_image, image, temp_image.size() / 2);
+        return image;
+    };
+
     auto loaded_images = std::map<int, cv::Mat>{};
-    auto get_scaled_frame = [&](int i) {
+    auto get_cached_scaled_frame = [&](int i) {
         auto it = loaded_images.find(i);
         if (it == loaded_images.end())
         {
-            auto image = cv::Mat{};
-            auto temp_image = cv::imread(frame_paths[i]);
-            cv::resize(temp_image, image, temp_image.size() / 2);
-            loaded_images[i] = image;
-            return image.clone();
+            loaded_images[i] = load_scaled_frame(i);
+            return loaded_images[i].clone();
         }
         else
         {
@@ -548,26 +553,30 @@ int main(int argc, char* argv[])
     {
         for (size_t i = 0; i < frame_paths.size(); ++i)
         {
-            get_scaled_frame((int)i);
+            get_cached_scaled_frame((int)i);
         }
     }
 
-    auto scaled_frame_with_info = [&](int i)
+    auto add_frame_info = [&](cv::Mat& image, int i)
     {
-        auto image = get_scaled_frame(i);
         auto label = std::stringstream();
         label.precision(3);
         label << "Average corner distance: " << avg_ds(i) << "px\n";
         label << "Frame: " << frame_paths[i] << "\n";
         put_text_lines(image, label, 100);
+    };
+
+    auto scaled_frame_with_info = [&](int i)
+    {
+        auto image = settings["cache_images"].get<bool>() ? get_cached_scaled_frame(i) : load_scaled_frame(i);
+        add_frame_info(image, i);
         return image;
     };
 
     if (settings["real_vis"].get<bool>())
     {
         // TODO actual height
-        // auto image_height = 540;
-        auto image_height = 2*std::abs(Ps[0](1,2));
+        auto image_height = 540;
         auto cv_M_points = with_flipped_ys(M_points, image_height);
         visualize_projections(scaled_frame_with_info, Vs.size(), cv_Ys, cv_M_points);
     }

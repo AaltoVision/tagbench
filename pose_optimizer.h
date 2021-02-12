@@ -59,5 +59,6 @@ mat4 optimize_pose(
     e_vec<mat3x4> const& PVs,
     e_vec<mat2x4> const& Ys,
     mat4 const& Z,
-    mat4 const& M0
+    mat4 const& M0,
+    bool silent = false
     );

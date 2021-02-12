@@ -79,6 +79,7 @@ mat4 make_view_matrix(mat3 const& R, vec3 const& t)
     return V;
 }
 
+// Solve 'dx', update of state vector 'x'
 Eigen::Vector<double, 7> optimize_step(
     e_vec<mat3x4> const& PVs,
     e_vec<mat2x4> const& Ys,
@@ -114,16 +115,17 @@ Eigen::Vector<double, 7> optimize_step(
 
         for (size_t k = 0; k < 4; ++k)
         {
-            // Projection of z_k with current M
+            // Projection of corner point z_k with current M
             vec3 xyw = PV * M * Z.col(k);
 
-            // Jg
             // NOTE: xyw(2) is '-Z'. Z should be negative to be in front of camera, so -Z should be positive
             if (xyw(2) < 0)
             {
                 // TODO: possibly penalize projecting points behind camera in a meaningful way instead of giving up
-                throw;
+                throw "Failed to optimize pose, marker corner projected behind camera";
             }
+
+            // Jg (Jacobian of g(x,y,w) = (x/w, y/w))
             double w2 = xyw(2) * xyw(2);
             Eigen::Matrix<double, 2, 3> Jg = Eigen::Matrix<double, 2, 3>{
                 {1.0f / xyw(2), 0, -xyw(0) / w2},
@@ -139,8 +141,8 @@ Eigen::Vector<double, 7> optimize_step(
 
             A += J_jk.transpose() * J_jk;
             vec2 xy = { xyw(0) / xyw(2), xyw(1) / xyw(2) };
-            vec2 xy_detected = vec2{ (double)Ys[j](0, k), (double)Ys[j](1, k) };
-            vec2 residual = xy - xy_detected;
+            vec2 xy_groundtruth = Ys[j].col(k);
+            vec2 residual = xy - xy_groundtruth;
             b -= J_jk.transpose() * residual;
 
             throw_if_nan_or_inf(J_jk);
@@ -159,7 +161,8 @@ mat4 optimize_pose(
     e_vec<mat3x4> const& PVs,
     e_vec<mat2x4> const& Ys,
     mat4 const& Z,
-    mat4 const& M0
+    mat4 const& M0,
+    bool silent
     )
 {
     mat4 M = M0;
@@ -167,8 +170,12 @@ mat4 optimize_pose(
     Eigen::Quaterniond qq(Eigen::AngleAxisd(M.block<3, 3>(0, 0)));
     vec4 q = { qq.w(), qq.x(), qq.y(), qq.z(), };
 
+    if (!silent)
+    {
+        std::printf("Initial error: \t\t\t\tE(M0) = %.6e\n", calculate_mse(project_corners(PVs, M, Z), Ys));
+    }
+
     // TODO: actual threshold etc.
-    std::printf("Initial error: \t\t\t\tE(M0) = %.6e\n", calculate_mse(project_corners(PVs, M, Z), Ys));
     for (size_t step = 0; step < 100; ++step)
     {
         Eigen::Vector<double, 7> dx;
@@ -182,11 +189,15 @@ mat4 optimize_pose(
         M = make_pose_matrix(quat2rmat(q), t);
         throw_if_nan_or_inf(M);
 
-        std::cout << "Step " << step << ": |dx| = " << dx.norm();
-        std::printf("\t\tE(M) = %.6e", calculate_mse(project_corners(PVs, M, Z), Ys));
-        std::printf("\t\t(step time: %.2fs)", step_time);
-        std::cout << std::endl;
+        if (!silent)
+        {
+            std::printf("Step %i: |dx| = %.8f\n", (int)step, dx.norm());
+            std::printf("\t\tE(M) = %.6e", calculate_mse(project_corners(PVs, M, Z), Ys));
+            std::printf("\t\t(step time: %.2fs)", step_time);
+            std::cout << std::endl;
+        }
     }
+
     return M;
 }
 
