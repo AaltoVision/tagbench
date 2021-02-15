@@ -336,7 +336,7 @@ void test_synthetic_case(bool show_visualization)
     }
 
     mat4 M0 = mat4::Identity();
-    mat4 M = optimize_pose(PVs, noisy_Ys, Z, M0);
+    mat4 M = optimize_pose(PVs, noisy_Ys, Z, M0, 100, 0, false);
     // mat4 M = optimize_pose(PVs, Ys, Z, M0);
     std::stringstream label;
     label.precision(3);
@@ -400,6 +400,9 @@ int main(int argc, char* argv[])
     settings["real_vis"] = true;
     settings["preload_images"] = true;
     settings["cache_images"] = true;
+    settings["optimizer_max_steps"] = 100;
+    settings["optimizer_stop_threshold"] = 0.01;
+    settings["optimizer_print_steps"] = true;
 
     std::istream& input = std::cin;
 
@@ -525,8 +528,8 @@ int main(int argc, char* argv[])
     mat4 M0 = (Vs[0].inverse() * C0);
 
     mat4 optimized_M;
-    auto optimization_time = timing([&]{
-        optimized_M = optimize_pose(PVs, Ys, Z, M0);
+    auto optimization_time = timing([&] {
+        optimized_M = optimize_pose(PVs, Ys, Z, M0, settings["optimizer_max_steps"], settings["optimizer_stop_threshold"], !settings["optimizer_print_steps"]);
     });
 
     auto const M_points = project_corners(PVs, optimized_M, Z);

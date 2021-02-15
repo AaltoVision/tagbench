@@ -85,9 +85,14 @@ Eigen::Vector<double, 7> optimize_step(
     e_vec<mat2x4> const& Ys,
     mat4 const& Z,
     vec3 const& t,
-    vec4 const& q)
+    vec4 const& q,
+    double residual_norm
+    )
 {
     mat4 M = make_pose_matrix(quat2rmat(q), t);
+
+    // Calculate norm of projection residuals for thresholding
+    residual_norm = 0.0;
 
     // Accumulate A and b over all frames and tag corners
     Eigen::Matrix<double, 7, 7> A = Eigen::Matrix<double, 7, 7>::Zero();
@@ -149,8 +154,11 @@ Eigen::Vector<double, 7> optimize_step(
             throw_if_nan_or_inf(residual);
             throw_if_nan_or_inf(A);
             throw_if_nan_or_inf(b);
+
+            residual_norm += residual.transpose() * residual;
         }
     }
+    residual_norm = std::sqrt(residual_norm);
 
     Eigen::Vector<double, 7> dx = A.colPivHouseholderQr().solve(b);
     throw_if_nan_or_inf(dx);
@@ -162,6 +170,8 @@ mat4 optimize_pose(
     e_vec<mat2x4> const& Ys,
     mat4 const& Z,
     mat4 const& M0,
+    int max_steps,
+    double stop_threshold,
     bool silent
     )
 {
@@ -175,11 +185,17 @@ mat4 optimize_pose(
         std::printf("Initial error: \t\t\t\tE(M0) = %.6e\n", calculate_mse(project_corners(PVs, M, Z), Ys));
     }
 
-    // TODO: actual threshold etc.
-    for (size_t step = 0; step < 100; ++step)
+    auto step = 0;
+    for (; (step < max_steps); ++step)
     {
         Eigen::Vector<double, 7> dx;
-        auto step_time = timing([&]{ dx = optimize_step(PVs, Ys, Z, t, q); });
+        auto residual_norm = 0.0;
+        auto step_time = timing([&]{ dx = optimize_step(PVs, Ys, Z, t, q, residual_norm); });
+        if (residual_norm < stop_threshold)
+        {
+            step++;
+            break;
+        }
         t += dx.block<3, 1>(0, 0);
         q += dx.block<4, 1>(3, 0);
         qq = Eigen::Quaterniond{ q.x(), q.y(), q.z(), q.w() };
@@ -196,6 +212,11 @@ mat4 optimize_pose(
             std::printf("\t\t(step time: %.2fs)", step_time);
             std::cout << std::endl;
         }
+    }
+    if (!silent)
+    {
+        std::printf("Finished after %d steps", step+1);
+        std::cout << std::endl;
     }
 
     return M;
