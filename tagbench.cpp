@@ -370,10 +370,13 @@ void flip_y(mat2x4& corner_points, double image_height)
     corner_points(1, 3) = image_height - corner_points(1, 3) - 1;
 }
 
-e_vec<mat2x4> with_flipped_ys(e_vec<mat2x4> const& corner_points, double image_height)
+e_vec<mat2x4> with_flipped_ys(e_vec<mat2x4> const& corner_points, std::vector<double> const& image_heights)
 {
     auto flipped = corner_points;
-    for (auto& p : flipped) { flip_y(p, image_height); }
+    for (size_t i = 0; i < flipped.size(); ++i)
+    {
+        flip_y(flipped[i], image_heights[i]);
+    }
     return flipped;
 }
 
@@ -406,6 +409,7 @@ int main(int argc, char* argv[])
     auto cv_Ys = e_vec<mat2x4>{}; // original y-coordinates (grow down) (opencv style)
     auto Ys = e_vec<mat2x4>{}; // flipped y-coordinates (grow up) (opengl style)
     auto frame_paths = std::vector<std::string>{};
+    auto image_heights = std::vector<double>{}; // needed for flipping y-coordinates
 
     std::string line;
     size_t total_input_frames = 0;
@@ -473,8 +477,10 @@ int main(int argc, char* argv[])
 
                 // Flip y-coordinates
                 mat2x4 flipped_Y = cv_Y;
-                // TODO actual height
-                double image_height = 540;
+                double image_height = j.contains("frameHeight")
+                    ? j["frameHeight"].get<double>()/2
+                    : cv::imread(j["framePath"].get<std::string>()).size().height/2.0f;
+                image_heights.push_back(image_height);
                 flip_y(flipped_Y, image_height);
                 Ys.push_back(flipped_Y);
 
@@ -575,9 +581,7 @@ int main(int argc, char* argv[])
 
     if (settings["real_vis"].get<bool>())
     {
-        // TODO actual height
-        auto image_height = 540;
-        auto cv_M_points = with_flipped_ys(M_points, image_height);
+        auto cv_M_points = with_flipped_ys(M_points, image_heights);
         visualize_projections(scaled_frame_with_info, Vs.size(), cv_Ys, cv_M_points);
     }
 
