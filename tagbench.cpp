@@ -54,6 +54,40 @@ static auto view_images = [](auto& get_image, int size)
     }
 };
 
+std::function<cv::Mat(int)> make_image_loader(bool cache_images, int image_minify_factor, std::vector<std::string> const& frame_paths)
+{
+    auto load_scaled_frame = [&frame_paths, image_minify_factor](int i)
+    {
+        auto image = cv::Mat{};
+        auto temp_image = cv::imread(frame_paths[i]);
+        cv::resize(temp_image, image, temp_image.size() / image_minify_factor);
+        return image;
+    };
+
+    if (!cache_images)
+    {
+        return load_scaled_frame;
+    }
+    else
+    {
+        auto loaded_images = std::map<int, cv::Mat>{};
+        return [load_scaled_frame, loaded_images, &frame_paths](int i) mutable
+        {
+            auto it = loaded_images.find(i);
+            if (it == loaded_images.end())
+            {
+                loaded_images[i] = load_scaled_frame(i);
+                return loaded_images[i].clone();
+            }
+            else
+            {
+                return it->second.clone();
+            }
+        };
+
+    }
+}
+
 // Mainly for debugging; change view matrices Vs s.t. they are relative to V
 void relate_views_to(e_vec<mat4>& Vs, mat4 const& V_inv)
 {
@@ -394,12 +428,13 @@ int main(int argc, char* argv[])
 {
     auto settings = json{};
     settings["tag_side_length"] = 0.198;
+    settings["image_minify_factor"] = 2;
     settings["synthetic_optimize"] = false;
     settings["synthetic_vis"] = false;
     settings["real_optimize"] = true;
     settings["real_vis"] = true;
-    settings["preload_images"] = true;
-    settings["cache_images"] = true;
+    settings["preload_images"] = false;
+    settings["cache_images"] = false;
     settings["optimizer_max_steps"] = 100;
     settings["optimizer_stop_threshold"] = 0.01;
     settings["optimizer_print_steps"] = true;
@@ -432,10 +467,11 @@ int main(int argc, char* argv[])
             mat3x4 P;
             parse_camera_intrinsics(j["cameraIntrinsics"], P);
             // We will scale images to half size, so have to adjust these focal lengths and principal point as well
-            P(0, 0) /= 2;
-            P(1, 1) /= 2;
-            P(0, 2) /= 2;
-            P(1, 2) /= 2;
+            auto const image_minify_factor = settings["image_minify_factor"].get<int>();
+            P(0, 0) /= image_minify_factor;
+            P(1, 1) /= image_minify_factor;
+            P(0, 2) /= image_minify_factor;
+            P(1, 2) /= image_minify_factor;
             mat4 V;
             vec3 t;
             parse_camera_extrinsics(j["cameraExtrinsics"], V, t);
@@ -450,7 +486,7 @@ int main(int argc, char* argv[])
             {
                 auto temp_image = cv::imread(j["framePath"]);
                 auto image = cv::Mat{};
-                cv::resize(temp_image, image, temp_image.size() / 2);
+                cv::resize(temp_image, image, temp_image.size() / image_minify_factor);
 
                 TagDetectorParams params;
                 auto tag_family = TagFamily(std::string("Tag36h11"));
@@ -480,9 +516,10 @@ int main(int argc, char* argv[])
 
                 // Flip y-coordinates
                 mat2x4 flipped_Y = cv_Y;
-                double image_height = j.contains("frameHeight")
-                    ? j["frameHeight"].get<double>()/2
-                    : cv::imread(j["framePath"].get<std::string>()).size().height/2.0f;
+                double original_image_height = j.contains("frameHeight")
+                    ? j["frameHeight"].get<double>()
+                    : cv::imread(j["framePath"].get<std::string>()).size().height;
+                double image_height = original_image_height / image_minify_factor;
                 image_heights.push_back(image_height);
                 flip_y(flipped_Y, image_height);
                 Ys.push_back(flipped_Y);
@@ -536,49 +573,24 @@ int main(int argc, char* argv[])
     auto corner_ds = corner_pixel_distances(M_points, Ys);
     auto avg_ds = corner_ds.rowwise().mean();
 
-    auto load_scaled_frame = [&](int i)
-    {
-        auto image = cv::Mat{};
-        auto temp_image = cv::imread(frame_paths[i]);
-        cv::resize(temp_image, image, temp_image.size() / 2);
-        return image;
-    };
+    auto image_loader = make_image_loader(settings["cache_images"], settings["image_minify_factor"], frame_paths);
 
-    auto loaded_images = std::map<int, cv::Mat>{};
-    auto get_cached_scaled_frame = [&](int i) {
-        auto it = loaded_images.find(i);
-        if (it == loaded_images.end())
-        {
-            loaded_images[i] = load_scaled_frame(i);
-            return loaded_images[i].clone();
-        }
-        else
-        {
-            return it->second.clone();
-        }
-    };
-
-    if (settings["preload_images"].get<bool>())
+    if (settings["preload_images"])
     {
         for (size_t i = 0; i < frame_paths.size(); ++i)
         {
-            get_cached_scaled_frame((int)i);
+            image_loader((int)i);
         }
     }
 
-    auto add_frame_info = [&](cv::Mat& image, int i)
+    auto scaled_frame_with_info = [&](int i)
     {
+        auto image = image_loader(i);
         auto label = std::stringstream();
         label.precision(3);
         label << "Average corner distance: " << avg_ds(i) << "px\n";
         label << "Frame: " << frame_paths[i] << "\n";
         put_text_lines(image, label, 100);
-    };
-
-    auto scaled_frame_with_info = [&](int i)
-    {
-        auto image = settings["cache_images"].get<bool>() ? get_cached_scaled_frame(i) : load_scaled_frame(i);
-        add_frame_info(image, i);
         return image;
     };
 
