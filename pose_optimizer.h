@@ -53,7 +53,8 @@ Eigen::Vector<double, 7> optimize_step(
     e_vec<mat2x4> const& Ys,
     mat4 const& Z,
     vec3 const& t,
-    vec4 const& q);
+    vec4 const& q,
+    double& residual_norm);
 
 mat4 optimize_pose(
     e_vec<mat3x4> const& PVs,

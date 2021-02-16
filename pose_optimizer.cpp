@@ -86,7 +86,7 @@ Eigen::Vector<double, 7> optimize_step(
     mat4 const& Z,
     vec3 const& t,
     vec4 const& q,
-    double residual_norm
+    double& residual_norm
     )
 {
     mat4 M = make_pose_matrix(quat2rmat(q), t);
@@ -155,7 +155,7 @@ Eigen::Vector<double, 7> optimize_step(
             throw_if_nan_or_inf(A);
             throw_if_nan_or_inf(b);
 
-            residual_norm += residual.transpose() * residual;
+            residual_norm += residual.dot(residual);
         }
     }
     residual_norm = std::sqrt(residual_norm);
@@ -207,7 +207,7 @@ mat4 optimize_pose(
 
         if (!silent)
         {
-            std::printf("Step %i: |dx| = %.8f\n", (int)step, dx.norm());
+            std::printf("Step %i: |dx| = %.8f", (int)step, dx.norm());
             std::printf("\t\tE(M) = %.6e", calculate_mse(project_corners(PVs, M, Z), Ys));
             std::printf("\t\t(step time: %.2fs)", step_time);
             std::cout << std::endl;
@@ -215,7 +215,7 @@ mat4 optimize_pose(
     }
     if (!silent)
     {
-        std::printf("Finished after %d steps", step+1);
+        std::printf("Finished after %d steps", step);
         std::cout << std::endl;
     }
 
