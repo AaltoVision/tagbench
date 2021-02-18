@@ -9,8 +9,6 @@
 
 #include <nlohmann/json.hpp>
 #include <Eigen/Dense>
-#include <TagDetector.h>
-#include <DebugImage.h>
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
@@ -23,6 +21,8 @@
 #include <array>
 #include <algorithm>
 #include <exception>
+
+#include "detect_markers.h"
 
 #include "pose_optimizer.h"
 
@@ -466,17 +466,18 @@ int main(int argc, char* argv[])
 
             mat3x4 P;
             parse_camera_intrinsics(j["cameraIntrinsics"], P);
-            // We will scale images to half size, so have to adjust these focal lengths and principal point as well
             auto const image_minify_factor = settings["image_minify_factor"].get<int>();
+
+            // We will scale images down, so have to adjust these focal lengths and principal point as well
             P(0, 0) /= image_minify_factor;
             P(1, 1) /= image_minify_factor;
             P(0, 2) /= image_minify_factor;
             P(1, 2) /= image_minify_factor;
             mat4 V;
             vec3 t;
+
             parse_camera_extrinsics(j["cameraExtrinsics"], V, t);
 
-            using tag_corners = std::array<std::array<float, 2>, 4>;
             auto corners = std::vector<tag_corners>{};
             if (j.contains("markers"))
             {
@@ -487,19 +488,7 @@ int main(int argc, char* argv[])
                 auto temp_image = cv::imread(j["framePath"]);
                 auto image = cv::Mat{};
                 cv::resize(temp_image, image, temp_image.size() / image_minify_factor);
-
-                TagDetectorParams params;
-                auto tag_family = TagFamily(std::string("Tag36h11"));
-                TagDetector detector(tag_family, params);
-                TagDetectionArray detections;
-
-                detector.process(image, cv::Point2i{image.size().width, image.size().height}, detections);
-
-                for (auto const &d : detections)
-                {
-                    corners.emplace_back();
-                    memcpy(&corners.back(), d.p, sizeof(d.p));
-                }
+                corners = detect_markers(image);
             }
 
             // For now, only consider frames where exactly only one Apriltag was detected
@@ -545,7 +534,6 @@ int main(int argc, char* argv[])
 
     if (!settings["real_optimize"]) return 0;
 
-    // relate_views_to(Vs, Vs[0].inverse());
     e_vec<mat3x4> PVs;
     for (size_t i = 0; i < Vs.size(); ++i)
     {
@@ -565,9 +553,20 @@ int main(int argc, char* argv[])
     mat4 M0 = (Vs[0].inverse() * C0);
 
     mat4 optimized_M;
-    auto optimization_time = timing([&] {
-        optimized_M = optimize_pose(PVs, Ys, Z, M0, settings["optimizer_max_steps"], settings["optimizer_stop_threshold"], !settings["optimizer_print_steps"]);
-    });
+    try
+    {
+        auto optimization_time = timing([&]{
+            optimized_M = optimize_pose(PVs, Ys, Z, M0,
+                settings["optimizer_max_steps"],
+                settings["optimizer_stop_threshold"],
+                !settings["optimizer_print_steps"]);
+        });
+    }
+    catch (...)
+    {
+        std::cerr << "Failed to optimize" << std::endl;
+        return 1;
+    }
 
     auto const M_points = project_corners(PVs, optimized_M, Z);
     auto corner_ds = corner_pixel_distances(M_points, Ys);

@@ -4,3 +4,7 @@
 [submodule "libs/eigen"]
 	path = libs/eigen
 	url = https://gitlab.com/libeigen/eigen.git
+[submodule "libs/apriltag"]
+	path = libs/apriltag
+	url = https://github.com/tgRobotics/apriltag.git
+	branch = fixPullRequestLibraryName

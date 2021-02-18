@@ -1,6 +1,4 @@
 #include <nlohmann/json.hpp>
-#include <TagDetector.h>
-#include <DebugImage.h>
 #include <fstream>
 #include <iostream>
 #include <string>
@@ -19,6 +17,8 @@ namespace fs = std::experimental::filesystem;
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/imgproc/imgproc_c.h>
 
+#include "detect_markers.h"
+
 using json = nlohmann::json;
 
 static auto timing = [](auto const& f) {
@@ -35,44 +35,6 @@ int parse_frame_number_from_path(fs::path const& path)
     return std::stoi(path.filename().stem().string().c_str());
 }
 
-using tag_corners = std::array<std::array<float, 2>, 4>;
-
-std::vector<tag_corners> detect_marker_corners(cv::Mat& image, cv::Point2d optical_center)
-{
-    TagDetectorParams params;
-    auto tag_family = TagFamily(std::string("Tag36h11"));
-    TagDetector detector(tag_family, params);
-    TagDetectionArray detections;
-
-    if (image.empty())
-        exit(1);
-    auto temp_image = cv::Mat{};
-    cv::resize(image, temp_image, image.size() / 2);
-    image = temp_image;
-
-    auto dt = timing([&] {
-        // Image is resized to half size, so optical center must also be scaled
-        detector.process(image, optical_center / 2, detections);
-    });
-
-    std::vector<tag_corners> marker_corners;
-    for (auto const &d : detections)
-    {
-        marker_corners.emplace_back();
-        memcpy(&marker_corners.back(), d.p, sizeof(d.p));
-#if 0
-        for (int j=0; j<4; ++j)
-        {
-            // cv::Mat img2 = image*0.5f + 127.0f;
-            cv::Mat img2 = image;
-            cv::line( img2, d.p[j], d.p[(j+1)%4], CV_RGB(255,0,0), 2, CV_AA);
-            cv::imshow("marker debug", img2);
-            cv::waitKey();
-        }
-#endif
-    }
-    return marker_corners;
-}
 
 // Prepare input data from given directory into .jsonl that 'tagbench' program expects
 // Output in jsonl format:
@@ -81,7 +43,7 @@ std::vector<tag_corners> detect_marker_corners(cv::Mat& image, cv::Point2d optic
 //          "frameIndex": 1,
 //          "framePath": "frame0001.png",
 //          "cameraIntrinsics": {focal lengths, principal point...},
-//          "cameraExtrinsics": {pos, rotation...},
+//          "cameraExtrinsics": {position, rotation...},
 //          "markers": [{"id":0,"corners":[[p0x,p0y],[p1x,p1y]...]}, {"id":1...}]
 //      }
 //
@@ -187,11 +149,9 @@ int main(int argc, char* argv[])
             // TODO: j["frameTime"] perhaps
 
             auto frame = cv::imread(frame_path.string());
-            auto optical_center = cv::Point2d{
-                p["cameraIntrinsics"]["principalPointX"].get<double>(),
-                p["cameraIntrinsics"]["principalPointY"].get<double>(),
-            };
-            j["markers"] = detect_marker_corners(frame, optical_center);
+            auto scaled_frame = cv::Mat{};
+            cv::resize(frame, scaled_frame, frame.size() / 2);
+            j["markers"] = detect_markers(scaled_frame);
 
             fprintf(out, "%s\n", j.dump().c_str());
         }
