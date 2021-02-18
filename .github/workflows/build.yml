@@ -18,6 +18,8 @@ jobs:
       run: time cmake --build build --target input_data_preprocessor
     - name: Build tagbench
       run: time cmake --build build --target tagbench
+    - name: Build synthetic_test
+      run: time cmake --build build --target synthetic_test
 
   build_windows:
     runs-on: windows-latest
@@ -36,3 +38,6 @@ jobs:
     - name: Build tagbench
       shell: bash
       run: time cmake --build build --target tagbench
+    - name: Build synthetic_test
+      shell: bash
+      run: time cmake --build build --target synthetic_test

@@ -35,8 +35,23 @@ add_executable(tagbench
     pose_optimizer.h
     detect_markers.cpp
     detect_markers.h
+    cv_helpers.cpp
+    cv_helpers.h
     )
 target_include_directories(tagbench PUBLIC "libs/eigen/" ${APRILTAGS_INCLUDE_DIRS})
 target_link_libraries(tagbench ${OpenCV_LIBS} nlohmann_json::nlohmann_json apriltags)
 target_compile_features(tagbench PUBLIC ${CPP_STANDARD})
 target_compile_definitions(tagbench PRIVATE _CRT_SECURE_NO_WARNINGS _SILENCE_CXX17_RESULT_OF_DEPRECATION_WARNING NOMINMAX _USE_MATH_DEFINES)
+
+# synthetic_test (simple synthetic test app for validating the optimizer)
+add_executable(synthetic_test
+    synthetic_test.cpp
+    pose_optimizer.cpp
+    pose_optimizer.h
+    cv_helpers.cpp
+    cv_helpers.h
+    )
+target_include_directories(synthetic_test PUBLIC "libs/eigen/" ${APRILTAGS_INCLUDE_DIRS})
+target_link_libraries(synthetic_test ${OpenCV_LIBS})
+target_compile_features(synthetic_test PUBLIC ${CPP_STANDARD})
+target_compile_definitions(synthetic_test PRIVATE _CRT_SECURE_NO_WARNINGS _SILENCE_CXX17_RESULT_OF_DEPRECATION_WARNING NOMINMAX _USE_MATH_DEFINES)
