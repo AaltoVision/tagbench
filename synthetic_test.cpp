@@ -19,35 +19,17 @@ void create_synthetic_dataset(mat4 const& Z,
                               e_vec<mat2x4>& Ys,
                               mat4 const& M)
 {
-    auto const look_z_minus = mat3(Eigen::AngleAxisd(M_PI, vec3::UnitY()));
     auto const angles = Eigen::VectorXd(Eigen::ArrayXd::LinSpaced(32, -M_PI/6, M_PI/6));
 
     // Rotate 30 degrees right-left around Y axis
-    // for (size_t i = 0; i < 32; ++i)
     for (auto angle : angles)
     {
         vec3 t = vec3{ 0, 0, 4 };
-        mat3 R = Eigen::AngleAxisd(angle, vec3::UnitY()).toRotationMatrix() * look_z_minus;
+        mat3 R = Eigen::AngleAxisd(angle, vec3::UnitY()).toRotationMatrix();
         Vs.push_back(make_view_matrix(R, t));
         // Just a sanity check; check origin is not behind camera (same as V(2,3)<0)
-        if ((Vs.back() * vec3::Zero().homogeneous()).z() < 0) throw;
+        if ((Vs.back() * vec3::Zero().homogeneous()).z() > 0) throw;
     }
-    // // Rotate 30 degrees up-down
-    // for (size_t i = 0; i < 32; ++i)
-    // {
-    //     vec3 t = vec3{ 0, 0, 4 };
-    //     mat3 R = Eigen::AngleAxisd(angles[i], vec3::UnitX()).toRotationMatrix() * look_z_minus;
-    //     Vs.push_back(make_view_matrix(R, t));
-    //     if ((Vs.back() * vec3::Zero().homogeneous()).z() < 0) throw;
-    // }
-    // // Rotate -30 to 30 degrees around Z- (rolling left ro right)
-    // for (size_t i = 0; i < 32; ++i)
-    // {
-    //     vec3 t = vec3{ 0, 0, 4 };
-    //     mat3 R = Eigen::AngleAxisd(angles[i], vec3::UnitZ()).toRotationMatrix() * look_z_minus;
-    //     Vs.push_back(make_view_matrix(R, t));
-    //     if ((Vs.back() * vec3::Zero().homogeneous()).z() < 0) throw;
-    // }
 
     // Translate in a circle around Z axis, looking towards Z-
     {
@@ -56,50 +38,47 @@ void create_synthetic_dataset(mat4 const& Z,
         for (size_t i = 0; i < 32; ++i)
         {
             vec3 t = Eigen::AngleAxisd(i * d_angle, -vec3::UnitZ()) * vec3::UnitX() * t_magnitude;
-            // t(2) = -4;
             t(2) = 4;
-            // mat3 R = mat3::Identity();
-            // R(2, 2) = -1; // Look at Z-
-            mat3 R = look_z_minus.transpose();
+            mat3 R = mat3::Identity();
             Vs.push_back(make_view_matrix(R, t));
         }
-        if ((Vs.back() * vec3::Zero().homogeneous()).z() < 0) throw;
+        if ((Vs.back() * vec3::Zero().homogeneous()).z() > 0) throw;
     }
 
     // Zoom out
     for (size_t i = 0; i < 32; ++i)
     {
         // Looking at Z-
-        mat3 R = vec3{ 1, 1, -1 }.asDiagonal();
+        mat3 R = mat3::Identity();
         // Moving towards Z+
         vec3 t = vec3::UnitZ() * ((int)i + 1);
         Vs.push_back(make_view_matrix(R, t));
-        if ((Vs.back() * vec3::Zero().homogeneous()).z() < 0) throw;
+        if ((Vs.back() * vec3::Zero().homogeneous()).z() > 0) throw;
     }
 
     // Zoom out, looking left
     for (size_t i = 0; i < 32; ++i)
     {
         // Looking at 30' left from Z-
-        mat3 R = Eigen::AngleAxisd(M_PI / 6, vec3::UnitY()) * look_z_minus;
+        mat3 R = Eigen::AngleAxisd(M_PI / 6, vec3::UnitY()).toRotationMatrix();
         // Moving towards Z+
         vec3 t = vec3::UnitZ() * ((int)i + 1);
         Vs.push_back(make_view_matrix(R, t));
-        if ((Vs.back() * vec3::Zero().homogeneous()).z() < 0) throw;
+        if ((Vs.back() * vec3::Zero().homogeneous()).z() > 0) throw;
     }
 
     // Rotate 30 degrees left-right around Y axis, while moving in circle around Z axis
     {
         double d_angle = 2.0 * M_PI / 32;
-        double t_magnitude = 0.2; // TODO: relate to pixels (through s and resolution)
+        double t_magnitude = 0.2;
         Eigen::VectorXd angles = Eigen::ArrayXd::LinSpaced(32, -M_PI / 12, M_PI / 12);
         for (size_t i = 0; i < 32; ++i)
         {
             vec3 t = Eigen::AngleAxisd(i * d_angle, -vec3::UnitZ()) * vec3::UnitX() * t_magnitude;
-            t(2) = -(((int)i) * 1.2 + 1);
+            t(2) = ((int)i) * 1.2 + 1;
             mat3 R = Eigen::AngleAxisd(angles[i], vec3::UnitY()).toRotationMatrix();
             Vs.push_back(make_view_matrix(R, t));
-            if ((Vs.back() * vec3::Zero().homogeneous()).z() < 0) throw;
+            if ((Vs.back() * vec3::Zero().homogeneous()).z() > 0) throw;
         }
     }
 
@@ -151,7 +130,6 @@ void test_synthetic_case(bool show_visualization)
 
     mat4 M0 = mat4::Identity();
     mat4 M = optimize_pose(PVs, noisy_Ys, Z, M0, 100, 0, false);
-    // mat4 M = optimize_pose(PVs, Ys, Z, M0);
     std::stringstream label;
     label.precision(3);
     label << "Optimized M for synthetic case:\n" << M << std::endl;
