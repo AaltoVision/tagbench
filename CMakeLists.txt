@@ -17,9 +17,9 @@ add_subdirectory(libs/json)
 
 # Data preprocessor
 add_executable(input_data_preprocessor
-    input_data_preprocessor.cpp
-    detect_markers.cpp
-    detect_markers.h
+    src/input_data_preprocessor.cpp
+    src/detect_markers.cpp
+    src/detect_markers.h
     )
 target_link_libraries(input_data_preprocessor PRIVATE
     ${OpenCV_LIBS}
@@ -30,13 +30,13 @@ target_compile_features(input_data_preprocessor PUBLIC ${CPP_STANDARD})
 
 # tagbench (the main app)
 add_executable(tagbench
-    tagbench.cpp
-    pose_optimizer.cpp
-    pose_optimizer.h
-    detect_markers.cpp
-    detect_markers.h
-    cv_helpers.cpp
-    cv_helpers.h
+    src/tagbench.cpp
+    src/pose_optimizer.cpp
+    src/pose_optimizer.h
+    src/detect_markers.cpp
+    src/detect_markers.h
+    src/cv_helpers.cpp
+    src/cv_helpers.h
     )
 target_include_directories(tagbench PUBLIC "libs/eigen/" ${APRILTAGS_INCLUDE_DIRS})
 target_link_libraries(tagbench ${OpenCV_LIBS} nlohmann_json::nlohmann_json apriltags)
@@ -45,11 +45,11 @@ target_compile_definitions(tagbench PRIVATE _CRT_SECURE_NO_WARNINGS _SILENCE_CXX
 
 # synthetic_test (simple synthetic test app for validating the optimizer)
 add_executable(synthetic_test
-    synthetic_test.cpp
-    pose_optimizer.cpp
-    pose_optimizer.h
-    cv_helpers.cpp
-    cv_helpers.h
+    src/synthetic_test.cpp
+    src/pose_optimizer.cpp
+    src/pose_optimizer.h
+    src/cv_helpers.cpp
+    src/cv_helpers.h
     )
 target_include_directories(synthetic_test PUBLIC "libs/eigen/" ${APRILTAGS_INCLUDE_DIRS})
 target_link_libraries(synthetic_test ${OpenCV_LIBS})
