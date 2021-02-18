@@ -206,8 +206,7 @@ int main(int argc, char* argv[])
     auto settings = json{};
     settings["tag_side_length"] = 0.198;
     settings["image_minify_factor"] = 2;
-    settings["real_optimize"] = true;
-    settings["real_vis"] = true;
+    settings["show_projections"] = true;
     settings["preload_images"] = false;
     settings["cache_images"] = false;
     settings["optimizer_max_steps"] = 100;
@@ -301,8 +300,6 @@ int main(int argc, char* argv[])
     Z.col(2) = vec4{ s/2, s/2, 0, 1, }; // top-right
     Z.col(3) = vec4{ -s/2, s/2, 0, 1, }; // top-left
 
-    if (!settings["real_optimize"]) return 0;
-
     e_vec<mat3x4> PVs;
     for (size_t i = 0; i < Vs.size(); ++i)
     {
@@ -330,6 +327,7 @@ int main(int argc, char* argv[])
                 settings["optimizer_stop_threshold"],
                 !settings["optimizer_print_steps"]);
         });
+        std::printf("Optimized in %.2fs\n", optimization_time);
     }
     catch (...)
     {
@@ -362,7 +360,7 @@ int main(int argc, char* argv[])
         return image;
     };
 
-    if (settings["real_vis"].get<bool>())
+    if (settings["show_projections"].get<bool>())
     {
         auto cv_M_points = with_flipped_ys(M_points, image_heights);
         visualize_projections(scaled_frame_with_info, Vs.size(), cv_Ys, cv_M_points);

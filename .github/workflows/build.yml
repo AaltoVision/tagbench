@@ -13,13 +13,16 @@ jobs:
     - name: Install opencv-dev library from apt
       run: sudo apt update && sudo apt install libopencv-dev
     - name: Generate build files with CMake
-      run: mkdir -p build && cd build && cmake ..
+      run: mkdir -p build && cd build && cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
     - name: Build input_data_preprocessor
       run: time cmake --build build --target input_data_preprocessor
     - name: Build tagbench
       run: time cmake --build build --target tagbench
     - name: Build synthetic_test
       run: time cmake --build build --target synthetic_test
+    - name: Run tagbench with the simple dataset in the repo
+      run: time build/tagbench < data/arcore-mini-test-with-settings.jsonl
+
 
   build_windows:
     runs-on: windows-latest
@@ -34,10 +37,12 @@ jobs:
       run: mkdir -p build && cd build && cmake -DCMAKE_PREFIX_PATH="C:\tools\opencv\build\" ..
     - name: Build input_data_preprocessor
       shell: bash
-      run: time cmake --build build --target input_data_preprocessor
+      run: time cmake --build build --target input_data_preprocessor --config RelWithDebInfo
     - name: Build tagbench
       shell: bash
-      run: time cmake --build build --target tagbench
+      run: time cmake --build build --target tagbench --config RelWithDebInfo
     - name: Build synthetic_test
       shell: bash
-      run: time cmake --build build --target synthetic_test
+      run: time cmake --build build --target synthetic_test --config RelWithDebInfo
+    - name: Run tagbench with the simple dataset in the repo
+      run: time build/RelWithDebInfo/tagbench < data/arcore-mini-test-with-settings.jsonl
