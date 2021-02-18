@@ -45,4 +45,5 @@ jobs:
       shell: bash
       run: time cmake --build build --target synthetic_test --config RelWithDebInfo
     - name: Run tagbench with the simple dataset in the repo
+      shell: bash
       run: time build/RelWithDebInfo/tagbench < data/arcore-mini-test-with-settings.jsonl
