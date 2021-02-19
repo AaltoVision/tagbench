@@ -5,9 +5,6 @@ data/*
 recorded_data/*
 
 # Test data to keep in the repo
-!data/arcore-mini-test.jsonl
-!data/arcore-mini-test-with-settings.jsonl
 !data/mini-test.jsonl
 !data/mini-test-no-markers.jsonl
-!recorded_data/arcore-mini-test/
 !recorded_data/mini-test/
