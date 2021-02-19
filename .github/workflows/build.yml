@@ -20,6 +20,11 @@ jobs:
       run: time cmake --build build --target tagbench
     - name: Build synthetic_test
       run: time cmake --build build --target synthetic_test
+    - name: Disable visualizations in test data settings, since it is a CI build
+      shell: bash
+      run: |
+        sed -i '1i{"settings":{"show_projections":false}}' data/mini-test.jsonl
+        sed -i '1i{"settings":{"show_projections":false}}' data/mini-test-no-markers.jsonl
     - name: Run tagbench with the simple dataset in the repo
       run: time build/tagbench < data/mini-test.jsonl
     - name: Run tagbench with the simple dataset in the repo that does not have markers yet in it
@@ -49,6 +54,11 @@ jobs:
     - name: Set up PATH so that OpenCV DLLs can be found
       shell: bash
       run: echo "C:/tools/opencv/build/x64/vc15/bin/" >> $GITHUB_PATH
+    - name: Disable visualizations in test data settings, since it is a CI build
+      shell: bash
+      run: |
+        sed -i '1i{"settings":{"show_projections":false}}' data/mini-test.jsonl
+        sed -i '1i{"settings":{"show_projections":false}}' data/mini-test-no-markers.jsonl
     - name: Run tagbench with the simple dataset in the repo
       shell: bash
       run: time build/RelWithDebInfo/tagbench < data/mini-test.jsonl
