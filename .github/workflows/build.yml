@@ -21,7 +21,9 @@ jobs:
     - name: Build synthetic_test
       run: time cmake --build build --target synthetic_test
     - name: Run tagbench with the simple dataset in the repo
-      run: time build/tagbench < data/arcore-mini-test-with-settings.jsonl
+      run: time build/tagbench < data/mini-test.jsonl
+    - name: Run tagbench with the simple dataset in the repo that does not have markers yet in it
+      run: time build/tagbench < data/mini-test-no-markers.jsonl
 
 
   build_windows:
@@ -49,4 +51,7 @@ jobs:
       run: echo "C:/tools/opencv/build/x64/vc15/bin/" >> $GITHUB_PATH
     - name: Run tagbench with the simple dataset in the repo
       shell: bash
-      run: time build/RelWithDebInfo/tagbench < data/arcore-mini-test-with-settings.jsonl
+      run: time build/RelWithDebInfo/tagbench < data/mini-test.jsonl
+    - name: Run tagbench with the simple dataset in the repo that does not have markers yet in it
+      shell: bash
+      run: time build/RelWithDebInfo/tagbench < data/mini-test-no-markers.jsonl
