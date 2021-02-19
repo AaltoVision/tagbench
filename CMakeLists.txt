@@ -43,6 +43,10 @@ target_link_libraries(tagbench ${OpenCV_LIBS} nlohmann_json::nlohmann_json april
 target_compile_features(tagbench PUBLIC ${CPP_STANDARD})
 target_compile_definitions(tagbench PRIVATE _CRT_SECURE_NO_WARNINGS _SILENCE_CXX17_RESULT_OF_DEPRECATION_WARNING NOMINMAX _USE_MATH_DEFINES)
 
+if (${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.16.0")
+    target_precompile_headers(tagbench PRIVATE src/pch.h)
+endif()
+
 # synthetic_test (simple synthetic test app for validating the optimizer)
 add_executable(synthetic_test
     src/synthetic_test.cpp

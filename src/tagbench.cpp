@@ -21,6 +21,7 @@
 #include <array>
 #include <algorithm>
 #include <exception>
+#include <functional>
 
 #include "cv_helpers.h"
 #include "detect_markers.h"
