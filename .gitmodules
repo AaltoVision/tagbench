@@ -8,3 +8,6 @@
 	path = libs/apriltag
 	url = https://github.com/tgRobotics/apriltag.git
 	branch = fixPullRequestLibraryName
+[submodule "libs/cxxopts"]
+	path = libs/cxxopts
+	url = https://github.com/jarro2783/cxxopts
