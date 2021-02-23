@@ -8,14 +8,19 @@ set(CPP_STANDARD cxx_std_17)
 # Dependencies
 find_package(OpenCV)
 
-set(USE_APRIL_TAGS_PYTHON_WRAPPER NO)
-set(BUILD_APRIL_TAG_EXAMPLES NO)
+option(USE_APRIL_TAGS_PYTHON_WRAPPER NO)
+option(BUILD_APRIL_TAG_EXAMPLES NO)
 add_subdirectory(libs/apriltag)
 
-set(JSON_BuildTests OFF CACHE INTERNAL "")
+option(JSON_BuildTests OFF)
 add_subdirectory(libs/json)
 
-# Data preprocessor
+option(CXXOPTS_BUILD_EXAMPLES OFF)
+option(CXXOPTS_BUILD_TESTS OFF)
+option(CXXOPTS_ENABLE_INSTALL OFF)
+add_subdirectory(libs/cxxopts)
+
+# Input data preprocessor
 add_executable(input_data_preprocessor
     src/input_data_preprocessor.cpp
     src/detect_markers.cpp
@@ -25,8 +30,10 @@ target_link_libraries(input_data_preprocessor PRIVATE
     ${OpenCV_LIBS}
     nlohmann_json::nlohmann_json
     apriltags
+    cxxopts
     $<$<AND:$<CXX_COMPILER_ID:GNU>,$<VERSION_LESS:$<CXX_COMPILER_VERSION>,9.0>>:stdc++fs>)
 target_compile_features(input_data_preprocessor PUBLIC ${CPP_STANDARD})
+target_compile_definitions(input_data_preprocessor PRIVATE _CRT_SECURE_NO_WARNINGS)
 
 # tagbench (the main app)
 add_executable(tagbench
