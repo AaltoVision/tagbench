@@ -8,6 +8,7 @@ set(CPP_STANDARD cxx_std_17)
 # Dependencies
 find_package(OpenCV)
 
+include(GNUInstallDirs)
 option(USE_APRIL_TAGS_PYTHON_WRAPPER NO)
 option(BUILD_APRIL_TAG_EXAMPLES NO)
 add_subdirectory(libs/apriltag)
