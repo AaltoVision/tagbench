@@ -212,13 +212,13 @@ int main(int argc, char* argv[])
     auto cache_images = false;
     auto optimizer_max_steps = 100;
     auto optimizer_stop_threshold = 0.01;
-    auto input_dir_option = std::string{};
+    auto input_file_option = std::string{};
     auto output_file_option = std::string{};
     auto verbose_output = false;
 
     cxxopts::Options options(argv[0], "");
     options.add_options()
-        ("i,input", "Path to the input data directory (default: stdin)", cxxopts::value(input_dir_option))
+        ("i,input", "Path to the input file (default: stdin)", cxxopts::value(input_file_option))
         ("o,output", "Output path (.jsonl file) (default: stdout)", cxxopts::value(output_file_option))
         ("s,tag_side_length", "Length of the tag's sides in meters in the input images", cxxopts::value(tag_side_length))
         ("d,image_downscale_factor", "Image downscaling factor", cxxopts::value(image_downscale_factor)->default_value("1"))
@@ -245,7 +245,9 @@ int main(int argc, char* argv[])
         return 1;
     }
 
-    std::istream& input = std::cin;
+    std::istream& input = parsed_args.count("input")
+        ? (std::istream&)std::ifstream{ input_file_option }
+        : std::cin;
 
     auto Ps = e_vec<mat3x4>{};
     auto Vs = e_vec<mat4>{};
@@ -260,9 +262,8 @@ int main(int argc, char* argv[])
     auto input_parse_time = timing([&]{
         while (std::getline(input, line))
         {
-            auto j = json::parse(line);
-
             ++total_input_frames;
+            auto j = json::parse(line);
 
             mat3x4 P;
             parse_camera_intrinsics(j["cameraIntrinsics"], P);
@@ -406,9 +407,12 @@ int main(int argc, char* argv[])
     }
 
     // Final output
+    std::ostream& output = parsed_args.count("output")
+        ? (std::ostream&)std::ofstream{ output_file_option }
+        : std::cout;
     auto j_out = json{};
     j_out["success"] = true;
     j_out["metric"] = mse;
     j_out["metric_per_frame"] = mse / frame_paths.size();
-    std::cout << j_out << std::endl;
+    output << j_out << std::endl;
 }

@@ -50,9 +50,9 @@ int main(int argc, char* argv[])
     cxxopts::Options options(argv[0], "");
     options.add_options()
         ("i,input", "Path to the input data directory", cxxopts::value<std::string>(input_dir_option))
+        ("o,output", "Output path (.jsonl file) (default: stdout)", cxxopts::value<std::string>(output_file_path))
         ("n,pose_data_name", "Name of pose data in the input", cxxopts::value<std::string>(pose_data_name))
         ("d,image_downscale_factor", "Image downscaling factor", cxxopts::value<int>(image_downscale_factor)->default_value("1"))
-        ("o,output", "Output path (.jsonl file) (default: stdout)", cxxopts::value<std::string>(output_file_path))
         ("h,help", "Show this help message")
         ;
 
@@ -78,16 +78,9 @@ int main(int argc, char* argv[])
     }
 
     // Write to given file path, otherwise to stdout
-    FILE* out = stdout;
-    if (parsed_args.count("output"))
-    {
-        out = std::fopen(output_file_path.c_str(), "w");
-        if (!out)
-        {
-            std::cerr << "Failed to open output file" << std::endl;
-            return 1;
-        }
-    }
+    std::ostream& out = parsed_args.count("output")
+        ? (std::ostream&)std::ofstream{ output_file_path }
+        : std::cout;
 
     auto const input_dir = fs::path{ input_dir_option };
     auto const input_frames_dir = input_dir / "frames";
@@ -95,7 +88,7 @@ int main(int argc, char* argv[])
     auto input_sensor_readings = std::ifstream{ input_sensor_readings_path };
     if (!input_sensor_readings)
     {
-        std::fprintf(stderr, "Failed to open input file (does it exist?): %s", input_sensor_readings_path.string().c_str());
+        std::cerr << "Failed to open input file (does it exist?): " << input_sensor_readings_path;
         return 1;
     }
 
@@ -110,8 +103,8 @@ int main(int argc, char* argv[])
             });
     } catch (std::exception& e)
     {
-        std::printf("Failed to parse frame numbers\n");
-        std::printf("%s\n", e.what());
+        std::cerr << "Failed to parse frame numbers" << std::endl;
+        std::cerr << e.what() << std::endl;
         return 1;
     }
 
@@ -184,11 +177,8 @@ int main(int argc, char* argv[])
             // Useful for flipping y-values in tagbench
             j["frameHeight"] = frame.size().height;
 
-            fprintf(out, "%s\n", j.dump().c_str());
+            out << j.dump() << std::endl;
         }
     }
-
-
-    if (out && (out != stdout)) std::fclose(out);
 }
 
