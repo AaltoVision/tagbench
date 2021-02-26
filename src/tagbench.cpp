@@ -9,6 +9,7 @@
 
 #include <nlohmann/json.hpp>
 #include <Eigen/Dense>
+#include <cxxopts.hpp>
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
@@ -41,13 +42,13 @@ using vec4 = Eigen::Vector4d;
 template<typename T>
 using e_vec = std::vector<T, Eigen::aligned_allocator<T>>;
 
-std::function<cv::Mat(int)> make_image_loader(bool cache_images, int image_minify_factor, std::vector<std::string> const& frame_paths)
+std::function<cv::Mat(int)> make_image_loader(bool cache_images, int image_downscale_factor, std::vector<std::string> const& frame_paths)
 {
-    auto load_scaled_frame = [&frame_paths, image_minify_factor](int i)
+    auto load_scaled_frame = [&frame_paths, image_downscale_factor](int i)
     {
         auto image = cv::Mat{};
         auto temp_image = cv::imread(frame_paths[i]);
-        cv::resize(temp_image, image, temp_image.size() / image_minify_factor);
+        cv::resize(temp_image, image, temp_image.size() / image_downscale_factor);
         return image;
     };
 
@@ -204,15 +205,45 @@ e_vec<mat2x4> with_flipped_ys(e_vec<mat2x4> const& corner_points, std::vector<do
 //
 int main(int argc, char* argv[])
 {
-    auto settings = json{};
-    settings["tag_side_length"] = 0.198;
-    settings["image_minify_factor"] = 2;
-    settings["show_projections"] = true;
-    settings["preload_images"] = false;
-    settings["cache_images"] = false;
-    settings["optimizer_max_steps"] = 100;
-    settings["optimizer_stop_threshold"] = 0.01;
-    settings["optimizer_print_steps"] = true;
+    auto tag_side_length = 0.198;
+    auto image_downscale_factor = 2;
+    auto show_projections = false;
+    auto preload_images = false;
+    auto cache_images = false;
+    auto optimizer_max_steps = 100;
+    auto optimizer_stop_threshold = 0.01;
+    auto input_dir_option = std::string{};
+    auto output_file_option = std::string{};
+    auto verbose_output = false;
+
+    cxxopts::Options options(argv[0], "");
+    options.add_options()
+        ("i,input", "Path to the input data directory (default: stdin)", cxxopts::value(input_dir_option))
+        ("o,output", "Output path (.jsonl file) (default: stdout)", cxxopts::value(output_file_option))
+        ("s,tag_side_length", "Length of the tag's sides in meters in the input images", cxxopts::value(tag_side_length))
+        ("d,image_downscale_factor", "Image downscaling factor", cxxopts::value(image_downscale_factor)->default_value("1"))
+        ("p,plot", "Plot projected points against groundtruth", cxxopts::value(show_projections))
+        ("m,optimizer_max_steps", "Maximum iteration count for pose optimizer", cxxopts::value(optimizer_max_steps))
+        ("t,optimizer_stop_threshold", "Threshold for projection error to stop optimization (see README)", cxxopts::value(optimizer_stop_threshold))
+        ("preload_images", "Preload all input frames to memory for smoother plot navigation (only when --plot is enabled) (does not affect results)", cxxopts::value(optimizer_stop_threshold))
+        ("cache_images", "Keep loaded input frames in memory for smoother plot navigation (only when --plot is enabled) (does not affect results)", cxxopts::value(optimizer_stop_threshold))
+        ("v,verbose", "Enable verbose output", cxxopts::value(verbose_output))
+        ("h,help", "Show this help message")
+        ;
+
+    auto parsed_args = options.parse(argc, argv);
+    if (parsed_args.count("help"))
+    {
+        std::cout << options.help() << std::endl;
+        return 0;
+    }
+    if (parsed_args.count("tag_side_length") == 0)
+    {
+        std::cerr << "Missing argument: tag_side_length." << std::endl;
+        std::cerr << options.help() << std::endl;
+        std::cerr << "See README.md for more instructions." << std::endl;
+        return 1;
+    }
 
     std::istream& input = std::cin;
 
@@ -229,25 +260,18 @@ int main(int argc, char* argv[])
     auto input_parse_time = timing([&]{
         while (std::getline(input, line))
         {
-            nlohmann::json j = nlohmann::json::parse(line);
-
-            if (j.contains("settings"))
-            {
-                settings.update(j["settings"]);
-                continue;
-            }
+            auto j = json::parse(line);
 
             ++total_input_frames;
 
             mat3x4 P;
             parse_camera_intrinsics(j["cameraIntrinsics"], P);
-            auto const image_minify_factor = settings["image_minify_factor"].get<int>();
 
             // We will scale images down, so have to adjust these focal lengths and principal point as well
-            P(0, 0) /= image_minify_factor;
-            P(1, 1) /= image_minify_factor;
-            P(0, 2) /= image_minify_factor;
-            P(1, 2) /= image_minify_factor;
+            P(0, 0) /= image_downscale_factor;
+            P(1, 1) /= image_downscale_factor;
+            P(0, 2) /= image_downscale_factor;
+            P(1, 2) /= image_downscale_factor;
             mat4 V;
             vec3 t;
 
@@ -262,7 +286,7 @@ int main(int argc, char* argv[])
             {
                 auto temp_image = cv::imread(j["framePath"]);
                 auto image = cv::Mat{};
-                cv::resize(temp_image, image, temp_image.size() / image_minify_factor);
+                cv::resize(temp_image, image, temp_image.size() / image_downscale_factor);
                 corners = detect_markers(image);
             }
 
@@ -283,7 +307,7 @@ int main(int argc, char* argv[])
                 double original_image_height = j.contains("frameHeight")
                     ? j["frameHeight"].get<double>()
                     : cv::imread(j["framePath"].get<std::string>()).size().height;
-                double image_height = original_image_height / image_minify_factor;
+                double image_height = original_image_height / image_downscale_factor;
                 image_heights.push_back(image_height);
                 flip_y(flipped_Y, image_height);
                 Ys.push_back(flipped_Y);
@@ -292,9 +316,12 @@ int main(int argc, char* argv[])
             }
         }
     });
-    std::printf("Parsed input in %.2fs\n", input_parse_time);
+    if (verbose_output)
+    {
+        std::printf("Parsed input in %.2fs\n", input_parse_time);
+    }
 
-    double s = settings["tag_side_length"].get<double>();
+    auto const s = tag_side_length;
     mat4 Z;
     Z.col(0) = vec4{ -s/2, -s/2, 0, 1, }; // bottom-left
     Z.col(1) = vec4{ s/2, -s/2, 0, 1, }; // bottom-right
@@ -317,18 +344,19 @@ int main(int argc, char* argv[])
     auto Cs = solve_homographies(Ps, cv_Ys, Z);
     mat4 cv_to_ogl = vec4{ 1, -1, -1, 1 }.asDiagonal();
     mat4 C0 = cv_to_ogl * Cs[0];
-    mat4 M0 = (Vs[0].inverse() * C0);
+    mat4 M0 = Vs[0].inverse() * C0;
 
     mat4 optimized_M;
     try
     {
-        auto optimization_time = timing([&]{
+        auto optimization_time = timing([&] {
             optimized_M = optimize_pose(PVs, Ys, Z, M0,
-                settings["optimizer_max_steps"],
-                settings["optimizer_stop_threshold"],
-                !settings["optimizer_print_steps"]);
+                                        optimizer_max_steps, optimizer_stop_threshold, !verbose_output);
         });
-        std::printf("Optimized in %.2fs\n", optimization_time);
+        if (verbose_output)
+        {
+            std::printf("Optimized in %.2fs\n", optimization_time);
+        }
     }
     catch (...)
     {
@@ -340,9 +368,9 @@ int main(int argc, char* argv[])
     auto corner_ds = corner_pixel_distances(M_points, Ys);
     auto avg_ds = corner_ds.rowwise().mean();
 
-    auto image_loader = make_image_loader(settings["cache_images"], settings["image_minify_factor"], frame_paths);
+    auto image_loader = make_image_loader(cache_images, image_downscale_factor, frame_paths);
 
-    if (settings["preload_images"])
+    if (preload_images)
     {
         for (size_t i = 0; i < frame_paths.size(); ++i)
         {
@@ -361,7 +389,7 @@ int main(int argc, char* argv[])
         return image;
     };
 
-    if (settings["show_projections"].get<bool>())
+    if (show_projections)
     {
         auto cv_M_points = with_flipped_ys(M_points, image_heights);
         visualize_projections(scaled_frame_with_info, Vs.size(), cv_Ys, cv_M_points);
@@ -369,9 +397,18 @@ int main(int argc, char* argv[])
 
     // Final score
     auto mse = calculate_mse(M_points, Ys);
-    std::printf("Total input frames: %zu\n", total_input_frames);
-    std::printf("Frames considered (single marker detected): %zu\n", Vs.size());
-    std::printf("E(M) = %.2f (Error for optimized M)\n", mse);
-    std::printf("E(M) per frame = %.2f\n", mse / frame_paths.size());
+    if (verbose_output)
+    {
+        std::printf("Total input frames: %zu\n", total_input_frames);
+        std::printf("Frames considered (single marker detected): %zu\n", Vs.size());
+        std::printf("E(M) = %.2f (Error for optimized M)\n", mse);
+        std::printf("E(M) per frame = %.2f\n", mse / frame_paths.size());
+    }
 
+    // Final output
+    auto j_out = json{};
+    j_out["success"] = true;
+    j_out["metric"] = mse;
+    j_out["metric_per_frame"] = mse / frame_paths.size();
+    std::cout << j_out << std::endl;
 }

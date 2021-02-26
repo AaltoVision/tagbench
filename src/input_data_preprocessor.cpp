@@ -51,7 +51,7 @@ int main(int argc, char* argv[])
     options.add_options()
         ("i,input", "Path to the input data directory", cxxopts::value<std::string>(input_dir_option))
         ("n,pose_data_name", "Name of pose data in the input", cxxopts::value<std::string>(pose_data_name))
-        ("m,image_downscale_factor", "Image downscaling factor", cxxopts::value<int>(image_downscale_factor)->default_value("1"))
+        ("d,image_downscale_factor", "Image downscaling factor", cxxopts::value<int>(image_downscale_factor)->default_value("1"))
         ("o,output", "Output path (.jsonl file) (default: stdout)", cxxopts::value<std::string>(output_file_path))
         ("h,help", "Show this help message")
         ;
@@ -64,14 +64,14 @@ int main(int argc, char* argv[])
     }
     if (parsed_args.count("input") == 0)
     {
-        std::cerr << "Missing input data path argument." << std::endl;
+        std::cerr << "Missing argument: input_data_path." << std::endl;
         std::cerr << options.help() << std::endl;
         std::cerr << "See README.md for more instructions." << std::endl;
         return 1;
     }
     if (parsed_args.count("pose_data_name") == 0)
     {
-        std::cerr << "Missing pose data name." << std::endl;
+        std::cerr << "Missing argument: pose_data_name." << std::endl;
         std::cerr << options.help() << std::endl;
         std::cerr << "See README.md for more instructions." << std::endl;
         return 1;

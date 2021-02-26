@@ -59,7 +59,11 @@ add_executable(tagbench
     src/cv_helpers.h
     )
 target_include_directories(tagbench PUBLIC "libs/eigen/" ${APRILTAGS_INCLUDE_DIRS})
-target_link_libraries(tagbench ${OpenCV_LIBS} nlohmann_json::nlohmann_json apriltags)
+target_link_libraries(tagbench
+    ${OpenCV_LIBS}
+    nlohmann_json::nlohmann_json
+    apriltags
+    cxxopts)
 target_compile_definitions(tagbench PRIVATE _CRT_SECURE_NO_WARNINGS _SILENCE_CXX17_RESULT_OF_DEPRECATION_WARNING NOMINMAX _USE_MATH_DEFINES)
 
 if (${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.16.0")
