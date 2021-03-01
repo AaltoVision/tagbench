@@ -78,8 +78,13 @@ int main(int argc, char* argv[])
     }
 
     // Write to given file path, otherwise to stdout
+    std::ofstream output_file_stream;
+    if (parsed_args.count("output"))
+    {
+        output_file_stream.open(output_file_path);
+    }
     std::ostream& out = parsed_args.count("output")
-        ? (std::ostream&)std::ofstream{ output_file_path }
+        ? (std::ostream&)output_file_stream
         : std::cout;
 
     auto const input_dir = fs::path{ input_dir_option };

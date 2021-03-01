@@ -211,8 +211,13 @@ int main(int argc, char* argv[])
         return 1;
     }
 
+    std::ifstream input_file_stream;
+    if (parsed_args.count("input"))
+    {
+        input_file_stream.open(input_file_option);
+    }
     std::istream& input = parsed_args.count("input")
-        ? (std::istream&)std::ifstream{ input_file_option }
+        ? (std::istream&)input_file_stream
         : std::cin;
 
     auto Ps = e_vec<mat3x4>{};
@@ -373,8 +378,13 @@ int main(int argc, char* argv[])
     }
 
     // Final output
+    std::ofstream output_file_stream;
+    if (parsed_args.count("output"))
+    {
+        output_file_stream.open(output_file_option);
+    }
     std::ostream& output = parsed_args.count("output")
-        ? (std::ostream&)std::ofstream{ output_file_option }
+        ? (std::ostream&)output_file_stream
         : std::cout;
     auto j_out = json{};
     j_out["success"] = true;
