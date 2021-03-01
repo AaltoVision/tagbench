@@ -8,6 +8,45 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/imgproc/imgproc_c.h>
 
+// Helper for configurable image loading
+// - When plotting the projections, caching images instead of reloading from disk each time
+//   makes browsing between images much smoother
+// - However, if the dataset is very large, you cannot cache images since you might run out of memory
+std::function<cv::Mat(int)> make_image_loader(bool cache_images, int image_downscale_factor,
+    std::vector<std::string> const& frame_paths)
+{
+    auto load_scaled_frame = [&frame_paths, image_downscale_factor](int i)
+    {
+        auto image = cv::Mat{};
+        auto temp_image = cv::imread(frame_paths[i]);
+        cv::resize(temp_image, image, temp_image.size() / image_downscale_factor);
+        return image;
+    };
+
+    if (!cache_images)
+    {
+        return load_scaled_frame;
+    }
+    else
+    {
+        auto loaded_images = std::map<int, cv::Mat>{};
+        return [load_scaled_frame, loaded_images, &frame_paths](int i) mutable
+        {
+            auto it = loaded_images.find(i);
+            if (it == loaded_images.end())
+            {
+                loaded_images[i] = load_scaled_frame(i);
+                return loaded_images[i].clone();
+            }
+            else
+            {
+                return it->second.clone();
+            }
+        };
+
+    }
+}
+
 void view_images(std::function<cv::Mat(int)> const& get_image, int size)
 {
     int i = 0;

@@ -12,6 +12,8 @@ using mat2x4 = Eigen::Matrix<double, 2, 4>;
 template<typename T>
 using e_vec = std::vector<T, Eigen::aligned_allocator<T>>;
 
+std::function<cv::Mat(int)> make_image_loader(bool cache_images, int image_downscale_factor, std::vector<std::string> const& frame_paths);
+
 void view_images(std::function<cv::Mat(int)> const& get_image, int size);
 
 void put_text_lines(cv::Mat& image, std::stringstream& text, int y);

@@ -42,40 +42,6 @@ using vec4 = Eigen::Vector4d;
 template<typename T>
 using e_vec = std::vector<T, Eigen::aligned_allocator<T>>;
 
-std::function<cv::Mat(int)> make_image_loader(bool cache_images, int image_downscale_factor, std::vector<std::string> const& frame_paths)
-{
-    auto load_scaled_frame = [&frame_paths, image_downscale_factor](int i)
-    {
-        auto image = cv::Mat{};
-        auto temp_image = cv::imread(frame_paths[i]);
-        cv::resize(temp_image, image, temp_image.size() / image_downscale_factor);
-        return image;
-    };
-
-    if (!cache_images)
-    {
-        return load_scaled_frame;
-    }
-    else
-    {
-        auto loaded_images = std::map<int, cv::Mat>{};
-        return [load_scaled_frame, loaded_images, &frame_paths](int i) mutable
-        {
-            auto it = loaded_images.find(i);
-            if (it == loaded_images.end())
-            {
-                loaded_images[i] = load_scaled_frame(i);
-                return loaded_images[i].clone();
-            }
-            else
-            {
-                return it->second.clone();
-            }
-        };
-
-    }
-}
-
 // Mainly for debugging; change view matrices Vs s.t. they are relative to V
 void relate_views_to(e_vec<mat4>& Vs, mat4 const& V_inv)
 {
