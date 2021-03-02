@@ -127,7 +127,7 @@ Eigen::Vector<double, 7> optimize_step(
             if (xyw(2) < 0)
             {
                 // TODO: possibly penalize projecting points behind camera in a meaningful way instead of giving up
-                throw "Failed to optimize pose, marker corner projected behind camera";
+                throw std::runtime_error("Failed to optimize pose, marker corner projected behind camera");
             }
 
             // Jg (Jacobian of g(x,y,w) = (x/w, y/w))

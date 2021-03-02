@@ -78,7 +78,7 @@ void parse_camera_extrinsics(json const& camera_extrinsics, mat4& view_matrix, v
         json_position["z"].get<double>(),
     };
     auto const& json_orientation = camera_extrinsics["orientation"];
-    Eigen::Quaterniond q = {
+    auto q = Eigen::Quaterniond{
         json_orientation["w"].get<double>(),
         json_orientation["x"].get<double>(),
         json_orientation["y"].get<double>(),
@@ -86,7 +86,10 @@ void parse_camera_extrinsics(json const& camera_extrinsics, mat4& view_matrix, v
     };
     mat3 R = q.toRotationMatrix();
     double det = R.determinant();
-    if (std::abs(det - 1.0) > 0.01) throw;
+    if (std::abs(det - 1.0) > 0.01)
+    {
+        throw std::runtime_error("View matrix rotation is invalid");
+    }
 
     view_matrix = mat4::Zero();
     view_matrix.block<3, 3>(0, 0) = R;
@@ -306,78 +309,6 @@ int main(int argc, char* argv[])
         PVs.push_back(Ps[i] * Vs[i]);
     }
 
-    // Initial guess M0 that puts corners on the correct side of camera (camera looks at Z- in view space)
-    // mat4 M0 = mat4::Identity();
-    // M0(2, 3) = -1;
-    // M0 = (Vs[0].inverse() * M0).eval();
-
-    // Solve homography from marker corners from first image to initialize M0
-    // Note: OpenGL and OpenCV have different coordinate systems, hence cv_to_ogl
-    auto Cs = solve_homographies(Ps, cv_Ys, Z);
-    mat4 cv_to_ogl = vec4{ 1, -1, -1, 1 }.asDiagonal();
-    mat4 C0 = cv_to_ogl * Cs[0];
-    mat4 M0 = Vs[0].inverse() * C0;
-
-    mat4 optimized_M;
-    try
-    {
-        auto optimization_time = timing([&] {
-            optimized_M = optimize_pose(PVs, Ys, Z, M0,
-                                        optimizer_max_steps, optimizer_stop_threshold, !verbose_output);
-        });
-        if (verbose_output)
-        {
-            std::printf("Optimized in %.2fs\n", optimization_time);
-        }
-    }
-    catch (...)
-    {
-        std::cerr << "Failed to optimize" << std::endl;
-        return 1;
-    }
-
-    auto const M_points = project_corners(PVs, optimized_M, Z);
-    auto corner_ds = corner_pixel_distances(M_points, Ys);
-    auto avg_ds = corner_ds.rowwise().mean();
-
-    auto image_loader = make_image_loader(cache_images, image_downscale_factor, frame_paths);
-
-    if (preload_images)
-    {
-        for (size_t i = 0; i < frame_paths.size(); ++i)
-        {
-            image_loader((int)i);
-        }
-    }
-
-    auto scaled_frame_with_info = [&](int i)
-    {
-        auto image = image_loader(i);
-        auto label = std::stringstream();
-        label.precision(3);
-        label << "Average corner distance: " << avg_ds(i) << "px\n";
-        label << "Frame: " << frame_paths[i] << "\n";
-        put_text_lines(image, label, 100);
-        return image;
-    };
-
-    if (show_projections)
-    {
-        auto cv_M_points = with_flipped_ys(M_points, image_heights);
-        visualize_projections(scaled_frame_with_info, Vs.size(), cv_Ys, cv_M_points);
-    }
-
-    // Final score
-    auto mse = calculate_mse(M_points, Ys);
-    if (verbose_output)
-    {
-        std::printf("Total input frames: %zu\n", total_input_frames);
-        std::printf("Frames considered (single marker detected): %zu\n", Vs.size());
-        std::printf("E(M) = %.2f (Error for optimized M)\n", mse);
-        std::printf("E(M) per frame = %.2f\n", mse / frame_paths.size());
-    }
-
-    // Final output
     std::ofstream output_file_stream;
     if (parsed_args.count("output"))
     {
@@ -386,9 +317,83 @@ int main(int argc, char* argv[])
     std::ostream& output = parsed_args.count("output")
         ? (std::ostream&)output_file_stream
         : std::cout;
-    auto j_out = json{};
-    j_out["success"] = true;
-    j_out["metric"] = mse;
-    j_out["metric_per_frame"] = mse / frame_paths.size();
-    output << j_out << std::endl;
+    try
+    {
+        // Initial guess M0 that puts corners on the correct side of camera (camera looks at Z- in view space)
+        // mat4 M0 = mat4::Identity();
+        // M0(2, 3) = -1;
+        // M0 = (Vs[0].inverse() * M0).eval();
+
+        // Solve homography from marker corners from first image to initialize M0
+        // Note: OpenGL and OpenCV have different coordinate systems, hence cv_to_ogl
+        auto Cs = solve_homographies(Ps, cv_Ys, Z);
+        mat4 cv_to_ogl = vec4{ 1, -1, -1, 1 }.asDiagonal();
+        mat4 C0 = cv_to_ogl * Cs[0];
+        mat4 M0 = Vs[0].inverse() * C0;
+
+        mat4 optimized_M;
+        auto optimization_time = timing([&] {
+            optimized_M = optimize_pose(PVs, Ys, Z, M0,
+                                        optimizer_max_steps, optimizer_stop_threshold, !verbose_output);
+        });
+        if (verbose_output)
+        {
+            std::printf("Optimized in %.2fs\n", optimization_time);
+        }
+
+        auto const M_points = project_corners(PVs, optimized_M, Z);
+        auto corner_ds = corner_pixel_distances(M_points, Ys);
+        auto avg_ds = corner_ds.rowwise().mean();
+
+        auto image_loader = make_image_loader(cache_images, image_downscale_factor, frame_paths);
+
+        if (preload_images)
+        {
+            for (size_t i = 0; i < frame_paths.size(); ++i)
+            {
+                image_loader((int)i);
+            }
+        }
+
+        auto scaled_frame_with_info = [&](int i)
+        {
+            auto image = image_loader(i);
+            auto label = std::stringstream();
+            label.precision(3);
+            label << "Average corner distance: " << avg_ds(i) << "px\n";
+            label << "Frame: " << frame_paths[i] << "\n";
+            put_text_lines(image, label, 100);
+            return image;
+        };
+
+        if (show_projections)
+        {
+            auto cv_M_points = with_flipped_ys(M_points, image_heights);
+            visualize_projections(scaled_frame_with_info, Vs.size(), cv_Ys, cv_M_points);
+        }
+
+        // Final score
+        auto mse = calculate_mse(M_points, Ys);
+        if (verbose_output)
+        {
+            std::printf("Total input frames: %zu\n", total_input_frames);
+            std::printf("Frames considered (single marker detected): %zu\n", Vs.size());
+            std::printf("E(M) = %.2f (Error for optimized M)\n", mse);
+            std::printf("E(M) per frame = %.2f\n", mse / frame_paths.size());
+        }
+
+        // Final output
+        auto j_out = json{};
+        j_out["success"] = true;
+        j_out["metric"] = mse;
+        j_out["metric_per_frame"] = mse / frame_paths.size();
+        output << j_out << std::endl;
+    }
+    catch (std::exception const& e)
+    {
+        auto j_out = json{};
+        j_out["success"] = false;
+        j_out["error"] = e.what();
+        output << j_out << std::endl;
+    }
 }
