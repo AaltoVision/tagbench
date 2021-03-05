@@ -46,13 +46,15 @@ int main(int argc, char* argv[])
     auto pose_data_name = std::string{};
     auto output_file_path = std::string{};
     auto image_downscale_factor = 1;
+    auto frames_with_vio_only = true;
 
     cxxopts::Options options(argv[0], "");
     options.add_options()
-        ("i,input", "Path to the input data directory", cxxopts::value<std::string>(input_dir_option))
-        ("o,output", "Output path (.jsonl file) (default: stdout)", cxxopts::value<std::string>(output_file_path))
-        ("n,pose_data_name", "Name of pose data in the input", cxxopts::value<std::string>(pose_data_name))
-        ("d,image_downscale_factor", "Image downscaling factor", cxxopts::value<int>(image_downscale_factor)->default_value("1"))
+        ("i,input", "Path to the input data directory", cxxopts::value(input_dir_option))
+        ("o,output", "Output path (.jsonl file) (default: stdout)", cxxopts::value(output_file_path))
+        ("frames_with_vio_only", "Only output frames which have a VIO reading at the same timestamp (otherwise, output also frames between VIO readings)", cxxopts::value(frames_with_vio_only))
+        ("n,pose_data_name", "Name of pose data in the input", cxxopts::value(pose_data_name))
+        ("d,image_downscale_factor", "Image downscaling factor", cxxopts::value(image_downscale_factor)->default_value("1"))
         ("h,help", "Show this help message")
         ;
 
@@ -174,12 +176,16 @@ int main(int argc, char* argv[])
             j["framePath"] = frame_path.string();
             // TODO: j["frameTime"] perhaps
 
+            // Note: marker corner positions are exported in original resolution,
+            // not downscaled resolution
             auto frame = cv::imread(frame_path.string());
             auto scaled_frame = cv::Mat{};
             cv::resize(frame, scaled_frame, frame.size() / image_downscale_factor);
-            j["markers"] = detect_markers(scaled_frame);
+            auto markers = detect_markers(scaled_frame);
+            scale_markers(markers, image_downscale_factor);
+            j["markers"] = markers;
 
-            // Useful for flipping y-values in tagbench
+            // Useful for flipping marker position y-values in tagbench
             j["frameHeight"] = frame.size().height;
 
             out << j.dump() << std::endl;

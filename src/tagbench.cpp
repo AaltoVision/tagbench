@@ -252,26 +252,26 @@ int main(int argc, char* argv[])
 
             parse_camera_extrinsics(j["cameraExtrinsics"], V, t);
 
-            auto corners = std::vector<tag_corners>{};
+            auto markers = std::vector<tag_corners>{};
             if (j.contains("markers"))
             {
-                corners = j["markers"].get<std::vector<tag_corners>>();
+                markers = j["markers"].get<std::vector<tag_corners>>();
             }
             else
             {
                 auto temp_image = cv::imread(j["framePath"]);
                 auto image = cv::Mat{};
                 cv::resize(temp_image, image, temp_image.size() / image_downscale_factor);
-                corners = detect_markers(image);
+                markers = detect_markers(image);
             }
 
             // For now, only consider frames where exactly only one Apriltag was detected
-            if (corners.size() == 1)
+            if (markers.size() == 1)
             {
                 Vs.push_back(V);
                 Ps.push_back(P);
                 Ts.push_back(t);
-                auto const& d = corners[0];
+                auto const& d = markers[0];
                 mat2x4 cv_Y;
                 cv_Y << d[0][0], d[1][0], d[2][0], d[3][0],
                     d[0][1], d[1][1], d[2][1], d[3][1];

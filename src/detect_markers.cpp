@@ -17,6 +17,7 @@ extern "C" {
 
 std::vector<tag_corners> detect_markers(cv::Mat const& image)
 {
+    // The detector expects grayscale images
     cv::Mat image_gray;
     cv::cvtColor(image, image_gray, cv::COLOR_BGR2GRAY);
 
@@ -28,22 +29,35 @@ std::vector<tag_corners> detect_markers(cv::Mat const& image)
                            image_gray.cols, image_gray.data };
     zarray_t *detections = apriltag_detector_detect(detector, &im);
 
-    auto corners = std::vector<tag_corners>{};
+    auto markers = std::vector<tag_corners>{};
     for (int i = 0; i < zarray_size(detections); ++i)
     {
         apriltag_detection_t* detection;
         zarray_get(detections, i, &detection);
-        corners.emplace_back();
-        static_assert(sizeof(corners.back()) == sizeof(detection->p));
+        markers.emplace_back();
+        static_assert(sizeof(markers.back()) == sizeof(detection->p));
         for (size_t c = 0; c < 4; ++c)
         {
-            corners.back()[c][0] = detection->p[c][0];
-            corners.back()[c][1] = detection->p[c][1];
+            markers.back()[c][0] = detection->p[c][0];
+            markers.back()[c][1] = detection->p[c][1];
         }
     }
 
     apriltag_detections_destroy(detections);
     apriltag_detector_destroy(detector);
     tag36h11_destroy(tag_family);
-    return corners;
+    return markers;
+}
+
+void scale_markers(std::vector<tag_corners>& markers, double scale_factor)
+{
+    for (auto& marker : markers)
+    {
+        for (auto& corner : marker)
+        {
+            // Scale marker corner positions to match original frame size
+            corner[0] *= scale_factor;
+            corner[1] *= scale_factor;
+        }
+    }
 }
