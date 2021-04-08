@@ -387,6 +387,12 @@ int main(int argc, char* argv[])
         j_out["success"] = true;
         j_out["metric"] = mse;
         j_out["metric_per_frame"] = mse / frame_paths.size();
+        j_out["optimized_M"] = {
+            { optimized_M(0, 0), optimized_M(0, 1), optimized_M(0, 2), optimized_M(0, 3), },
+            { optimized_M(1, 0), optimized_M(1, 1), optimized_M(1, 2), optimized_M(1, 3), },
+            { optimized_M(2, 0), optimized_M(2, 1), optimized_M(2, 2), optimized_M(2, 3), },
+            { optimized_M(3, 0), optimized_M(3, 1), optimized_M(3, 2), optimized_M(3, 3), },
+        };
         output << j_out << std::endl;
     }
     catch (std::exception const& e)
