@@ -74,7 +74,7 @@ For extracting frames from your input video, [ffmpeg](https://ffmpeg.org/) needs
     # Preprocess your recorded video/VIO data
     mkdir -p data
     cmake --build build/ --target input_data_preprocessor --config RelWithDebInfo
-    ./build/RelWithDebInfo/input_data_preprocessor $MY_INPUT_DATA_DIR -o data/tagbench_input.jsonl
+    ./build/RelWithDebInfo/input_data_preprocessor -i $MY_INPUT_DATA_DIR -o data/tagbench_input.jsonl
 
     # Run the benchmark with your data
     cmake --build build/ --target tagbench --config RelWithDebInfo
