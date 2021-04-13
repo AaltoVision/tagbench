@@ -117,6 +117,7 @@ int main(int argc, char* argv[])
 
     // Parse time->frame_index mapping
     auto time_to_frame_index = std::unordered_map<float, int>{};
+    auto frame_index_to_time = std::unordered_map<int, float>{};
     auto line = std::string{};
     while (std::getline(input_sensor_readings, line))
     {
@@ -127,6 +128,7 @@ int main(int argc, char* argv[])
             auto time = line_json["time"].get<float>();
             auto frame_index = line_json["number"].get<int>();
             time_to_frame_index[time] = frame_index;
+            frame_index_to_time[frame_index] = time;
         }
     }
 
@@ -174,7 +176,7 @@ int main(int argc, char* argv[])
 
             j["frameIndex"] = frame_index;
             j["framePath"] = frame_path.string();
-            // TODO: j["frameTime"] perhaps
+            j["time"] = frame_index_to_time[frame_index];
 
             // Note: marker corner positions are exported in original resolution,
             // not downscaled resolution
