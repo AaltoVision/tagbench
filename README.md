@@ -2,12 +2,19 @@
 
 The tagbench application can be used to measure small-scale visual accuracy of VIO (Visual inertial odometry)-estimated pose data.
 
-
 You can use the [Android VIO-tester](https://github.com/AaltoML/android-viotester) for recording your data.
 Then, use the input_data_preprocessor to prepare it into the input format that tagbench expects (see <i>Usage</i>).
 However, you can also use your own data, if you prepare it in the right format (see <i>input format</i>)
 
 Details of the small-scale visual error metric and its computation are available in [docs/apriltag-visual-error-measurement.pdf](docs/apriltag-visual-error-measurement.pdf).
+
+## TODOs
+
+- Make sure input_data_preprocessor outputs marker coordinates in original image size coordinates, regardless of --image_downscale_factor argument
+- Make sure tagbench assumes marker coordinates are in original image size coordinates, regardless of --image_downscale_factor argument
+- Currently input_data_preprocessor only outputs frames, for which there exist both a camera image, as well as extrinsic data, with matching timestamps. If there is more VIO pose data (extrinsic camera parameters) in between two sequential frames' timestamps, they are not used at all. It might make sense to output the same frame multiple times with each pose. In this case tag corner coordinates ('markers' in the .jsonl output) could also be interpolated between frames, for example linearly, instead of using the same detected marker coordinates for each in-between-frames pose.
+- The current example 'mini-test' dataset in the repository might have scaled-down marker coordinates, have to check or just make a new example.
+- Check that the 'Usage' section in README is up-to-date.
 
 ## Build
 
