@@ -53,7 +53,7 @@ int main(int argc, char* argv[])
         ("i,input", "Path to the input data directory", cxxopts::value(input_dir_option))
         ("o,output", "Output path (.jsonl file) (default: stdout)", cxxopts::value(output_file_path))
         ("frames_with_vio_only", "Only output frames which have a VIO reading at the same timestamp (otherwise, output also frames between VIO readings)", cxxopts::value(frames_with_vio_only))
-        ("n,pose_data_name", "Name of pose data in the input", cxxopts::value(pose_data_name))
+        ("n,pose_data_name", "Name of pose data in the input (for example arcore)", cxxopts::value(pose_data_name))
         ("d,image_downscale_factor", "Image downscaling factor", cxxopts::value(image_downscale_factor)->default_value("1"))
         ("h,help", "Show this help message")
         ;
