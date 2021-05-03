@@ -2,6 +2,7 @@
 
 The tagbench application can be used to measure small-scale visual accuracy of VIO (Visual inertial odometry)-estimated pose data.
 
+
 You can use the [Android VIO-tester](https://github.com/AaltoML/android-viotester) for recording your data.
 Then, use the input_data_preprocessor to prepare it into the input format that tagbench expects (see <i>Usage</i>).
 However, you can also use your own data, if you prepare it in the right format (see <i>input format</i>)
@@ -24,7 +25,7 @@ Note: the cmake prefix path is relative to the repository root, not the build fo
     cd ..
     cmake --build build/ --config RelWithDebInfo
 
-Note: the resulting \<build-dir\> (see <i>Usage</i>) is either <i>build</i> or <i>build/\<config\></i>, depending on your cmake generator (for example, make = build and Visual Studio = <i>build/\<config\></i>
+Note: the resulting \<build-dir\> (see <i>Usage</i>) is either <i>build</i> or <i>build/\<config\></i>, depending on your cmake generator (for example, make = build and Visual Studio = <i>build/\<config\></i>)
 
 ## Usage
 
@@ -74,11 +75,11 @@ For extracting frames from your input video, [ffmpeg](https://ffmpeg.org/) needs
     # Preprocess your recorded video/VIO data
     mkdir -p data
     cmake --build build/ --target input_data_preprocessor --config RelWithDebInfo
-    ./build/RelWithDebInfo/input_data_preprocessor -i $MY_INPUT_DATA_DIR -o data/tagbench_input.jsonl
+    <build-dir>/input_data_preprocessor -i $MY_INPUT_DATA_DIR -o data/tagbench_input.jsonl
 
     # Run the benchmark with your data
     cmake --build build/ --target tagbench --config RelWithDebInfo
-    ./build/tagbench -i data/tagbench_input.jsonl -s 0.198
+    <build-dir>/tagbench -i data/tagbench_input.jsonl -s 0.198
 
 To see all options, use the <i>--help</i> switch:
 
